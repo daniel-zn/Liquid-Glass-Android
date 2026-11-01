@@ -84,7 +84,7 @@ internal class BackdropCapture {
         // host 不是玻璃的祖先（同级/跨层级/跨 window 的背景来源）时为 null，
         // 这种情况没有重入风险，整棵照常画。
         val branch = childOnPathTo(host, glass)
-        drawContent(canvas, host, branch ?: glass)
+        drawContent(canvas, host, branch ?: glass, inFrontToo = branch != null)
         if (branch == null || branch === glass) return
 
         // 分支刚才被跳过了，这里单独补画（坐标取屏幕差，自带滚动/平移）
@@ -103,13 +103,33 @@ internal class BackdropCapture {
     }
 
     /** 画 [host] 自身，期间把 [hidden] 置为 INVISIBLE 让 dispatchDraw 跳过它 */
-    private fun drawContent(canvas: Canvas, host: View, hidden: View) {
+    private val frontHidden = ArrayList<View>()
+
+    /**
+     * Draws [host] without [hidden]; with [inFrontToo], also without the children drawn after it (they
+     * are in front of the glass, not behind it). That keeps a glass's backdrop to what is really behind
+     * it, and makes cycles impossible: glass only ever records glass behind it, never the other way
+     * round (two glass views in one window that recorded each other's nodes overflowed the
+     * RenderThread's stack in prepareTree).
+     */
+    private fun drawContent(canvas: Canvas, host: View, hidden: View, inFrontToo: Boolean = false) {
         val save = canvas.save()
         // 公开的 View.draw(Canvas) 不带滚动偏移（框架是在 updateDisplayListIfDirty
         // 里补的），这里补上，否则滚动容器作为背景来源时内容会整体错位
         canvas.translate(-host.scrollX.toFloat(), -host.scrollY.toFloat())
         // setTransitionVisibility 只改可见性标志、不触发 invalidate
         hidden.setTransitionVisibility(View.INVISIBLE)
+        if (inFrontToo && host is ViewGroup) {
+            var after = false
+            for (i in 0 until host.childCount) {
+                val c = host.getChildAt(i)
+                if (c === hidden) { after = true; continue }
+                if (after && c.visibility == View.VISIBLE) {
+                    c.setTransitionVisibility(View.INVISIBLE)
+                    frontHidden.add(c)
+                }
+            }
+        }
         val nested = depth > 0
         if (nested) hideOtherGlass(host, hidden)
         hideSurfaces(host)
@@ -124,6 +144,8 @@ internal class BackdropCapture {
             }
             for (v in surfacesHidden) v.setTransitionVisibility(View.VISIBLE)
             surfacesHidden.clear()
+            for (v in frontHidden) v.setTransitionVisibility(View.VISIBLE)
+            frontHidden.clear()
             hidden.setTransitionVisibility(View.VISIBLE)
             canvas.restoreToCount(save)
         }
