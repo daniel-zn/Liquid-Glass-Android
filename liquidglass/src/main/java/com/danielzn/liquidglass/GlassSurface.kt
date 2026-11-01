@@ -1,0 +1,33 @@
+package com.danielzn.liquidglass
+
+import android.graphics.Canvas
+import android.view.View
+
+/**
+ * A view that draws glass from a recorded backdrop ([LiquidGlassView], [GlassPane]).
+ *
+ * The renderers record [glassBackdropSource] (minus the glass itself) and, under it,
+ * [glassUnderlay]: content that is on screen but not in the view tree, such as a video
+ * [android.view.SurfaceView] (see [SurfaceBackdrop]). Glass views found while another
+ * glass is sampling are hidden from that sample (glass does not refract glass).
+ */
+interface GlassSurface {
+    /** The view whose drawing is the backdrop (null: nothing to sample). */
+    val glassBackdropSource: View?
+
+    /** Drawn under the backdrop source, in screen coordinates; null for none. */
+    val glassUnderlay: BackdropUnderlay?
+
+    /** True while this glass's own backdrop is being recorded: its draw() must draw nothing. */
+    var glassCapturing: Boolean
+}
+
+/**
+ * Screen-space content drawn under a glass's backdrop: what the window shows behind the
+ * view tree (a video surface, a wallpaper). [drawUnderlay] gets a canvas whose origin is the
+ * screen's top-left corner; draw only what is cheap (a cached bitmap), it runs on every
+ * re-record of every glass that uses it.
+ */
+interface BackdropUnderlay {
+    fun drawUnderlay(canvas: Canvas)
+}

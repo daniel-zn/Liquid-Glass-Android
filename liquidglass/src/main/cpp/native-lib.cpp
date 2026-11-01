@@ -100,7 +100,7 @@ static bool lock_bitmap(
  * JNI: gaussianIIRInplace
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_blur_NativeGauss_gaussianIIRInplace(
+Java_com_danielzn_liquidglass_blur_NativeGauss_gaussianIIRInplace(
     JNIEnv* env,
     jobject /* this */,
     jobject bitmap,
@@ -136,7 +136,7 @@ Java_com_example_blur_NativeGauss_gaussianIIRInplace(
  * JNI: gaussianIIRNeonInplace
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_blur_NativeGauss_gaussianIIRNeonInplace(
+Java_com_danielzn_liquidglass_blur_NativeGauss_gaussianIIRNeonInplace(
     JNIEnv* env,
     jobject /* this */,
     jobject bitmap,
@@ -172,7 +172,7 @@ Java_com_example_blur_NativeGauss_gaussianIIRNeonInplace(
  * JNI: hasNeonSupport
  */
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_blur_NativeGauss_hasNeonSupport(
+Java_com_danielzn_liquidglass_blur_NativeGauss_hasNeonSupport(
     JNIEnv* env,
     jobject /* this */
 ) {
@@ -183,7 +183,7 @@ Java_com_example_blur_NativeGauss_hasNeonSupport(
  * JNI: box3Inplace
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_blur_NativeGauss_box3Inplace(
+Java_com_danielzn_liquidglass_blur_NativeGauss_box3Inplace(
     JNIEnv* env,
     jobject /* this */,
     jobject bitmap,
@@ -224,7 +224,7 @@ Java_com_example_blur_NativeGauss_box3Inplace(
  * @param downscale 降采样比例（0.01-1.0，推荐 0.5）
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_blur_NativeGauss_advancedBoxBlurInplace(
+Java_com_danielzn_liquidglass_blur_NativeGauss_advancedBoxBlurInplace(
     JNIEnv* env,
     jobject /* this */,
     jobject bitmap,
@@ -268,7 +268,7 @@ Java_com_example_blur_NativeGauss_advancedBoxBlurInplace(
  * @param downscale 降采样比例（0.01-1.0，推荐 0.5）
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_blur_NativeGauss_advancedBoxBlurInplaceHQ(
+Java_com_danielzn_liquidglass_blur_NativeGauss_advancedBoxBlurInplaceHQ(
     JNIEnv* env,
     jobject /* this */,
     jobject bitmap,
@@ -317,7 +317,7 @@ Java_com_example_blur_NativeGauss_advancedBoxBlurInplaceHQ(
  * @param useBilinear 是否使用双线性插值（默认 true）
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_liquidglass_NativeChromaticAberration_chromaticAberrationInplace(
+Java_com_danielzn_liquidglass_NativeChromaticAberration_chromaticAberrationInplace(
     JNIEnv* env,
     jobject /* this */,
     jobject source,
@@ -415,7 +415,7 @@ Java_com_example_liquidglass_NativeChromaticAberration_chromaticAberrationInplac
  * @param useBilinear 是否使用双线性插值（默认 true）
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_liquidglass_NativeChromaticDispersion_chromaticDispersionInplace(
+Java_com_danielzn_liquidglass_NativeChromaticDispersion_chromaticDispersionInplace(
     JNIEnv* env,
     jobject /* this */,
     jobject source,

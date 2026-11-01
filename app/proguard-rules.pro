@@ -25,13 +25,13 @@
 # ========================================
 
 # 保护 NativeGauss 类及其所有 native 方法
--keep class com.example.blur.NativeGauss {
+-keep class com.danielzn.liquidglass.blur.NativeGauss {
     native <methods>;
     public <methods>;
 }
 
 # 保护 NativeChromaticAberration 类及其所有 native 方法
--keep class com.example.liquidglass.NativeChromaticAberration {
+-keep class com.danielzn.liquidglass.NativeChromaticAberration {
     native <methods>;
     public <methods>;
 }

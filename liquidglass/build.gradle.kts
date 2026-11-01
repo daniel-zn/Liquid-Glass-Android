@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.liquidglass"
+    namespace = "com.danielzn.liquidglass"
     // API 36：RuntimeColorFilter / RuntimeXfermode（AGSL 颜色滤镜与混合模式）
     compileSdk = 36
     // 锁定 NDK：不指定的话 CI 会用 runner 默认版本，编出的 .so 与本地不一致
@@ -46,6 +46,10 @@ android {
         jvmTarget = "11"
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     // JitPack / maven-publish：发布 release 变体并附带源码 jar
     publishing {
         singleVariant("release") {
@@ -67,6 +71,8 @@ dependencies {
     // 只有 LiquidGlassTabLayoutMediator 用到 ViewPager2，同样 compileOnly：
     // 用它和 ViewPager2 联动的使用方本来就依赖 viewpager2
     compileOnly(libs.androidx.viewpager2)
+
+    testImplementation(libs.junit)
 }
 
 // JitPack 发布配置：
@@ -78,7 +84,7 @@ afterEvaluate {
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
-                groupId = "com.github.QWEA0"
+                groupId = "com.github.daniel-zn"
                 artifactId = "liquidglass"
                 version = "2.0.11"
             }

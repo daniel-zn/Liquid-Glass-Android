@@ -112,7 +112,7 @@ Run the sample app for the full playground (9 scenes + a live parameter drawer),
 hero scene used for the screenshots at the top:
 
 ```bash
-adb shell am start -n com.example.liquidglass/com.example.liquidglass.HeroShowcaseActivity
+adb shell am start -n com.danielzn.liquidglass/com.danielzn.liquidglass.HeroShowcaseActivity
 ```
 
 The **Control Center** scene is a pixel-measured replica of the iOS 26 Control Center over the same
@@ -122,7 +122,7 @@ itself. It hides the demo chrome and system bars; tap the power icon in the top-
 them back.
 
 ```bash
-adb shell am start -n com.example.liquidglass/com.example.liquidglass.ProfessionalDemoActivity --es scene control_center
+adb shell am start -n com.danielzn.liquidglass/com.danielzn.liquidglass.ProfessionalDemoActivity --es scene control_center
 ```
 
 ### 📦 Installation (JitPack)
@@ -172,7 +172,7 @@ drawn **behind** it, so the background content must come first in an overlapping
         android:scaleType="centerCrop"
         android:src="@drawable/your_background" />
 
-    <com.example.liquidglass.LiquidGlassView
+    <com.danielzn.liquidglass.LiquidGlassView
         android:id="@+id/glass"
         android:layout_width="280dp"
         android:layout_height="96dp"
@@ -194,13 +194,13 @@ drawn **behind** it, so the background content must come first in an overlapping
             android:textColor="#FFFFFF"
             android:textSize="20sp" />
 
-    </com.example.liquidglass.LiquidGlassView>
+    </com.danielzn.liquidglass.LiquidGlassView>
 </FrameLayout>
 ```
 
 ```kotlin
-import com.example.liquidglass.GlassMaterial
-import com.example.liquidglass.LiquidGlassView
+import com.danielzn.liquidglass.GlassMaterial
+import com.danielzn.liquidglass.LiquidGlassView
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -364,7 +364,7 @@ See [docs/LIQUID_GLASS_V2.md](docs/LIQUID_GLASS_V2.md) for the full lens-pipelin
 
 **How do I add iOS 26 Liquid Glass to an existing Android XML layout?**
 Add the JitPack repo and the `:liquidglass` dependency, then put a
-`com.example.liquidglass.LiquidGlassView` in your layout over some background content and
+`com.danielzn.liquidglass.LiquidGlassView` in your layout over some background content and
 set `enableDynamicBackground = true`. Full snippet in [Quick Start](#-quick-start).
 
 **How do I put glass over a `ScrollView` / `RecyclerView`?**
@@ -603,14 +603,14 @@ Inspired by the glassmorphism design trend and liquid-glass-react library.
 跑 sample app 可以看到完整调参场（9 个场景 + 实时参数抽屉），或者直接启动首屏用的 hero 场景：
 
 ```bash
-adb shell am start -n com.example.liquidglass/com.example.liquidglass.HeroShowcaseActivity
+adb shell am start -n com.danielzn.liquidglass/com.danielzn.liquidglass.HeroShowcaseActivity
 ```
 
 **控制中心**场景是按 iOS 26 控制中心截图逐像素量出来的复刻：从桌面往下拉开、往上滑收起，点网络模块展开二级页，
 滑杆能拖、按钮能切换，方便和真机并排只比玻璃本身。这个场景会藏起 demo 控件和系统栏，点右上角的电源图标切回。
 
 ```bash
-adb shell am start -n com.example.liquidglass/com.example.liquidglass.ProfessionalDemoActivity --es scene control_center
+adb shell am start -n com.danielzn.liquidglass/com.danielzn.liquidglass.ProfessionalDemoActivity --es scene control_center
 ```
 
 ### 📦 安装（JitPack）
@@ -659,7 +659,7 @@ dependencies {
         android:scaleType="centerCrop"
         android:src="@drawable/your_background" />
 
-    <com.example.liquidglass.LiquidGlassView
+    <com.danielzn.liquidglass.LiquidGlassView
         android:id="@+id/glass"
         android:layout_width="280dp"
         android:layout_height="96dp"
@@ -681,13 +681,13 @@ dependencies {
             android:textColor="#FFFFFF"
             android:textSize="20sp" />
 
-    </com.example.liquidglass.LiquidGlassView>
+    </com.danielzn.liquidglass.LiquidGlassView>
 </FrameLayout>
 ```
 
 ```kotlin
-import com.example.liquidglass.GlassMaterial
-import com.example.liquidglass.LiquidGlassView
+import com.danielzn.liquidglass.GlassMaterial
+import com.danielzn.liquidglass.LiquidGlassView
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -845,7 +845,7 @@ glass.blurMethod = BlurMethod.SMART         // 合法枚举名见下方表格
 
 **怎么在已有的 Android XML 布局里加 iOS 26 液态玻璃？**
 加上 JitPack 仓库和 `:liquidglass` 依赖，在布局里把
-`com.example.liquidglass.LiquidGlassView` 放在某个背景内容之上，然后设
+`com.danielzn.liquidglass.LiquidGlassView` 放在某个背景内容之上，然后设
 `enableDynamicBackground = true`。完整代码见[快速开始](#-快速开始)。
 
 **怎么在 `ScrollView` / `RecyclerView` 上面加玻璃？**

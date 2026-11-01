@@ -62,7 +62,7 @@ sibling placed after the background content in a `FrameLayout` (or any overlappi
         android:scaleType="centerCrop"
         android:src="@drawable/your_background" />
 
-    <com.example.liquidglass.LiquidGlassView
+    <com.danielzn.liquidglass.LiquidGlassView
         android:id="@+id/glass"
         android:layout_width="280dp"
         android:layout_height="96dp"
@@ -83,7 +83,7 @@ sibling placed after the background content in a `FrameLayout` (or any overlappi
             android:textColor="#FFFFFF"
             android:textSize="20sp" />
 
-    </com.example.liquidglass.LiquidGlassView>
+    </com.danielzn.liquidglass.LiquidGlassView>
 </FrameLayout>
 ```
 
@@ -143,7 +143,7 @@ glass.enableDynamicBackground = true   // REQUIRED if the backdrop moves or the 
 - **`debugApiLevelCap` (Int, debug only)** clamps the version-tiered pipeline selection
   so a high-API device can preview lower tiers; `effectiveApiLevel` (read-only) is
   `min(device SDK, cap)`. Do not set the cap in production code.
-- **Package name is `com.example.liquidglass`** for both the library classes and the
+- **Package name is `com.danielzn.liquidglass`** for both the library classes and the
   Android manifest namespace. It is not `com.qwea0.*`.
 
 ## Enum values (exact spelling)

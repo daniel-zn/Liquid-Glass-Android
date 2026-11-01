@@ -13,13 +13,13 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    // 库代码已拆分到 :liquidglass 模块（com.example.liquidglass），
+    // 库代码已拆分到 :liquidglass 模块（com.danielzn.liquidglass），
     // demo 使用独立命名空间避免 R 类冲突；applicationId 保持不变
-    namespace = "com.example.liquidglass.demo"
+    namespace = "com.danielzn.liquidglass.demo"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.liquidglass"
+        applicationId = "com.danielzn.liquidglass.demo"
         minSdk = 24
         targetSdk = 35
         versionCode = 211

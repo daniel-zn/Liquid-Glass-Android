@@ -3,7 +3,7 @@
     LiquidGlassView 自定义 XML 属性
 
     示例：
-    <com.example.liquidglass.LiquidGlassView
+    <com.danielzn.liquidglass.LiquidGlassView
         app:blurAmount="0.0625"
         app:saturation="140"
         app:cornerRadius="999dp"
