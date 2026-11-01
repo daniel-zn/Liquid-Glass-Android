@@ -317,10 +317,16 @@ internal class GlassLensRenderer {
         val dim: Float,
         val saturation: Float,  // 100 = 原始
         val press: Float,
-        val touchX: Float, val touchY: Float, val touchAmp: Float
+        val touchX: Float, val touchY: Float, val touchAmp: Float,
+        /** < 1: the backdrop is recorded and blurred at this scale, then upscaled under the full-res lens. */
+        val backdropScale: Float = 1f
     )
 
     private val renderNode = RenderNode("LiquidGlassLens")
+
+    /** The downscaled, blurred backdrop (only with LensParams.backdropScale < 1). */
+    private val blurNode = RenderNode("LiquidGlassLensBlur")
+    private var blurNodeRadius = Float.NaN
 
     /**
      * 向外折射用的外层合成节点。RenderEffect 的输出区是节点范围与画布裁剪区的交集，
@@ -451,7 +457,12 @@ internal class GlassLensRenderer {
         } else {
             // 录制区域向四周外扩 margin：模糊在边缘处能采到真实内容而非透明黑
             renderNode.setPosition(x - margin, y - margin, x + width + margin, y + height + margin)
-            recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
+            val scale = params.backdropScale
+            if (scale < 0.99f && scale > 0f) {
+                recordScaledBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH, scale, params.blurRadius)
+            } else {
+                recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
+            }
             // 形状覆盖率由着色器输出（形状外 alpha=0），无需 clipPath
             canvas.drawRenderNode(renderNode)
         }
@@ -480,6 +491,54 @@ internal class GlassLensRenderer {
             } finally {
                 host.glassCapturing = false
             }
+        } finally {
+            renderNode.endRecording()
+        }
+    }
+
+    /**
+     * Records the backdrop at [scale] into [blurNode] (blurred there, on scale² of the pixels) and
+     * draws it scaled back up into [renderNode], whose effect is then the lens alone.
+     */
+    private fun recordScaledBackdrop(
+        parent: View,
+        glassView: View,
+        host: GlassSurface,
+        offsetX: Float,
+        offsetY: Float,
+        margin: Int,
+        recW: Int,
+        recH: Int,
+        scale: Float,
+        blurRadius: Float
+    ) {
+        val bw = ceil(recW * scale).toInt().coerceAtLeast(1)
+        val bh = ceil(recH * scale).toInt().coerceAtLeast(1)
+        blurNode.setPosition(0, 0, bw, bh)
+        val r = blurRadius * scale
+        if (r != blurNodeRadius) {
+            blurNode.setRenderEffect(
+                if (r > 0.01f) RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP) else null
+            )
+            blurNodeRadius = r
+        }
+        val bc = blurNode.beginRecording(bw, bh)
+        try {
+            bc.scale(scale, scale)
+            bc.translate(margin - offsetX, margin - offsetY)
+            host.glassCapturing = true
+            try {
+                backdropCapture.draw(bc, parent, glassView, host.glassUnderlay)
+            } finally {
+                host.glassCapturing = false
+            }
+        } finally {
+            blurNode.endRecording()
+        }
+        val rc = renderNode.beginRecording(recW, recH)
+        try {
+            rc.scale(1f / scale, 1f / scale)
+            rc.drawRenderNode(blurNode)
         } finally {
             renderNode.endRecording()
         }
@@ -580,7 +639,8 @@ internal class GlassLensRenderer {
         sh.setFloatUniform("touchAmp", p.touchAmp)
 
         val lens = RenderEffect.createRuntimeShaderEffect(sh, "content")
-        return if (p.blurRadius > 0.01f) {
+        val scaled = p.backdropScale < 0.99f && p.backdropScale > 0f && !p.outward
+        return if (p.blurRadius > 0.01f && !scaled) {
             RenderEffect.createChainEffect(
                 lens,
                 RenderEffect.createBlurEffect(p.blurRadius, p.blurRadius, Shader.TileMode.CLAMP)
@@ -592,6 +652,8 @@ internal class GlassLensRenderer {
 
     fun release() {
         renderNode.discardDisplayList()
+        blurNode.discardDisplayList()
+        blurNodeRadius = Float.NaN
         layerNode.discardDisplayList()
         shader = null
         lastParams = null

@@ -40,7 +40,8 @@ internal object GlassGeometry {
             dim = look.dim.coerceIn(0f, 1f),
             saturation = look.saturation,
             press = 0f,
-            touchX = 0f, touchY = 0f, touchAmp = 0f
+            touchX = 0f, touchY = 0f, touchAmp = 0f,
+            backdropScale = look.backdropScale.coerceIn(0.1f, 1f)
         )
     }
 

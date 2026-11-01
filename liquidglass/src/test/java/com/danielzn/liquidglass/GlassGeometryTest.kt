@@ -79,4 +79,15 @@ class GlassGeometryTest {
         assertEquals(0L, GlassGeometry.nextCopyDelay(10f, 1000L, 1500L))
         assertEquals(0L, GlassGeometry.nextCopyDelay(0f, 1000L, 1000L))
     }
+
+    @Test
+    fun backdropScaleIsClampedAndCompared() {
+        val full = GlassGeometry.lensParams(GlassLook(), 400f, 400f, 0f, density)
+        assertEquals(1f, full.backdropScale, 0f)
+        val q = GlassGeometry.lensParams(GlassLook(backdropScale = 0.25f), 400f, 400f, 0f, density)
+        assertEquals(0.25f, q.backdropScale, 0f)
+        assertTrue(full != q)
+        assertEquals(0.1f, GlassGeometry.lensParams(GlassLook(backdropScale = 0f), 400f, 400f, 0f, density).backdropScale, 0f)
+        assertEquals(1f, GlassGeometry.lensParams(GlassLook(backdropScale = 3f), 400f, 400f, 0f, density).backdropScale, 0f)
+    }
 }

@@ -27,16 +27,23 @@ class GlassLook @JvmOverloads constructor(
     @JvmField var glassTint: Int = 0,
     /** Light direction (unit vector, screen space; default from the top left). */
     @JvmField var lightX: Float = -0.6f,
-    @JvmField var lightY: Float = -0.8f
+    @JvmField var lightY: Float = -0.8f,
+    /**
+     * Records and blurs the backdrop at this scale (0.25 = a sixteenth of the pixels), then
+     * upscales it under the full-resolution lens: much cheaper blur on weak GPUs, the rim stays
+     * sharp. 1 = full resolution.
+     */
+    @JvmField var backdropScale: Float = 1f
 ) {
     fun copy(): GlassLook = GlassLook(
         blurRadius, bevel, refraction, falloff, dispersion, specular, saturation, tint, dim,
-        glassTint, lightX, lightY
+        glassTint, lightX, lightY, backdropScale
     )
 
     fun set(o: GlassLook) {
         blurRadius = o.blurRadius; bevel = o.bevel; refraction = o.refraction; falloff = o.falloff
         dispersion = o.dispersion; specular = o.specular; saturation = o.saturation; tint = o.tint
         dim = o.dim; glassTint = o.glassTint; lightX = o.lightX; lightY = o.lightY
+        backdropScale = o.backdropScale
     }
 }
