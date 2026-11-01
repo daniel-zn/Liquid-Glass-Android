@@ -480,6 +480,7 @@ internal class GlassLensRenderer {
         recW: Int,
         recH: Int
     ) {
+        GlassStats.lensRecords++
         val recordingCanvas = renderNode.beginRecording(recW, recH)
         try {
             recordingCanvas.translate(margin - offsetX, margin - offsetY)
@@ -512,6 +513,7 @@ internal class GlassLensRenderer {
         scale: Float,
         blurRadius: Float
     ) {
+        GlassStats.lensRecords++
         val bw = ceil(recW * scale).toInt().coerceAtLeast(1)
         val bh = ceil(recH * scale).toInt().coerceAtLeast(1)
         blurNode.setPosition(0, 0, bw, bh)
