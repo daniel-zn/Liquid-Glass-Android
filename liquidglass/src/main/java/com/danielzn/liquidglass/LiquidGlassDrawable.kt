@@ -121,9 +121,20 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         }
     }
 
-    /** The view this is the background of. */
+    /**
+     * The view this is drawn in: the callback, or, inside a container drawable (a
+     * StateListDrawable for focus states, a LayerDrawable), the container's own host.
+     */
     val host: View?
-        get() = callback as? View
+        get() {
+            var cb: Any? = callback
+            var depth = 0
+            while (cb is Drawable && depth < 8) {
+                cb = cb.callback
+                depth++
+            }
+            return cb as? View
+        }
 
     /** Copies [value] into this glass's look and redraws. */
     fun setLook(value: GlassLook) {
