@@ -201,9 +201,17 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         return p
     }
 
+    private var lastW = -1
+    private var lastH = -1
+
     override fun onBoundsChange(bounds: android.graphics.Rect) {
         super.onBoundsChange(bounds)
-        paramsDirty = true
+        // Moving (scrolling) keeps the shape: the parameters only depend on the size.
+        if (bounds.width() != lastW || bounds.height() != lastH) {
+            lastW = bounds.width()
+            lastH = bounds.height()
+            paramsDirty = true
+        }
     }
 
     override fun getOutline(outline: Outline) {

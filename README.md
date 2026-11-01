@@ -1,3 +1,8 @@
+> **This fork** (`com.danielzn.liquidglass`) adds a lean path for screens that must stay idle
+> when nothing moves (TV launchers, kiosks, glass over video): see
+> [Lean glass for TV and video](#lean-glass-for-tv-and-video). Upstream:
+> [QWEA0/Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android) (MIT).
+
 ![frontPhoto](assets/banner.png)
 <div align="center">
 
@@ -1000,3 +1005,42 @@ git clone https://github.com/yourusername/liquidglass-android.git
 **为 Android 开发者用心打造**
 
 </div>
+
+## Lean glass for TV and video
+
+Three additions for screens where idle cost and frame time matter more than touch effects
+(API 33+ for the glass itself; a flat fallback below):
+
+- **`LiquidGlassDrawable`**: the lens glass (rim refraction, dispersion, rim light, blur, tint) as
+  a `Drawable`. Set it as any view's background: no layout change. It redraws only when
+  something changed: a property, its size, the host's position on screen (checked in a
+  pre-draw listener, so only on frames the window draws anyway), `invalidateBackdrop()`, or a
+  new frame from a `SurfaceBackdrop`. No hardware layer, no sensors or timers, no per-frame
+  allocation. `GlassLook` holds the look (blur radius, bevel, refraction, falloff, dispersion,
+  specular, saturation, tint, dim, glass tint, light direction, `backdropScale`).
+- **`GlassPane`**: a `FrameLayout` with a `LiquidGlassDrawable` background.
+- **`SurfaceBackdrop`**: a `SurfaceView`'s picture (a video, a camera) is composited outside the
+  view tree, so glass can't record it. This copies it with `PixelCopy` into a small bitmap
+  (480x270 by default) at a set rate, only while it is running and some attached glass is shown,
+  and draws it under the glass's backdrop (`BackdropUnderlay`). Two bitmaps, reused; the copy
+  runs on its own thread.
+
+```kotlin
+val video = SurfaceBackdrop(surfaceView).apply { framesPerSecond = 10f }
+panel.background = LiquidGlassDrawable(cornerRadius = 28.dp).apply {
+    backdropSource = backgroundContainer   // only what is behind the glass
+    backdropUnderlay = video
+    setLook(GlassLook(blurRadius = 40f, tint = 0x70141418, backdropScale = 0.25f))
+}
+video.running = true                       // while the video plays
+```
+
+Notes:
+- `backdropScale < 1` records and blurs the backdrop at that scale and upscales it under the
+  full-resolution lens: the blur costs a fraction (0.25: a sixteenth of the pixels) while the rim
+  stays sharp.
+- Backdrop recording never records a `SurfaceView` that is a direct child of a recorded level (it
+  would only punch a hole, and drawing its node twice confuses its position updates).
+- Pick a backdrop source that holds only what is behind the glass, so animations in front of it
+  don't re-render it.
+- The lens shader has an interior fast path: away from the rim it is one texture sample.
