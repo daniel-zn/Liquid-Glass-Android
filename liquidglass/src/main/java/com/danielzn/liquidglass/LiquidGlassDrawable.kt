@@ -138,13 +138,36 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
     /** The backdrop's content changed in a way the glass can't see: redraw once. */
     fun invalidateBackdrop() = invalidateSelf()
 
+    /**
+     * Called at the start of every draw: a subclass may set [backdropSource] and
+     * [backdropUnderlay] here (e.g. from a registry), without that causing another draw.
+     */
+    protected open fun onPrepareBackdrop(host: View?) {}
+
+    private var preparing = false
+
+    override fun invalidateSelf() {
+        if (!preparing) super.invalidateSelf()
+    }
+
     override fun draw(canvas: Canvas) {
         if (glassCapturing) return
         val h = host
+        preparing = true
+        try {
+            onPrepareBackdrop(h)
+        } finally {
+            preparing = false
+        }
         if (h != null && trackedHost !== h) track(h)
         val b = bounds
         if (b.isEmpty) return
+        // A fade (state changes, a parent's StateListDrawable) sets our alpha: the lens honours it
+        // through a layer, only while it is under 255.
+        val layer = if (alpha < 255 && lensEnabled) canvas.saveLayerAlpha(b.left.toFloat(), b.top.toFloat(),
+            b.right.toFloat(), b.bottom.toFloat(), alpha) else -1
         isLensActive = lensEnabled && h != null && drawLens(canvas, h)
+        if (layer >= 0) canvas.restoreToCount(layer)
         if (!isLensActive) drawFallback(canvas, cornerRadiusFor(b.width(), b.height()))
         if (h != null) rememberPosition(h)
         (backdropUnderlay as? SurfaceBackdrop)?.onGlassDrawn()
