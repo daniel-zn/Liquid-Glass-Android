@@ -46,6 +46,15 @@ abstract class PixelCopyBackdrop(
     /** The source's rectangle on screen. */
     protected abstract fun sourceRect(out: Rect)
 
+    /**
+     * Whether the source may have changed since the last copy. A video always may; a window only
+     * after it drew a frame ([WindowBackdrop]). False: no copy is scheduled until it changes.
+     */
+    protected open fun sourceChanged(): Boolean = true
+
+    /** The copy is being made now: the change it reflects is taken. */
+    protected open fun onCopyStarted() {}
+
     /** Copies per second while running and shown; 0 = only on [refresh]. */
     var framesPerSecond: Float = 10f
         set(value) {
@@ -151,13 +160,16 @@ abstract class PixelCopyBackdrop(
         if (!running || pending) return
         if (!anyShown()) return
         if (framesPerSecond <= 0f && front >= 0) return
+        if (front >= 0 && !sourceChanged()) return
         scheduled = true
         main.postDelayed(tick, GlassGeometry.nextCopyDelay(framesPerSecond, requestedAt, SystemClock.uptimeMillis()))
     }
 
     private fun copyNow() {
         if (!running || pending || !anyShown()) return
+        if (front >= 0 && !sourceChanged()) return
         if (!canCopy()) return
+        onCopyStarted()
         val handler = copyHandler ?: HandlerThread("glass-backdrop").let { t ->
             t.start()
             thread = t

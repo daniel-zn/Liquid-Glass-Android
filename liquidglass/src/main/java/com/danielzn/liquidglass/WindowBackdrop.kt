@@ -21,8 +21,8 @@ import androidx.annotation.RequiresApi
  * under the other window (it took down an emulator's GPU every time a popup closed). A copy
  * shares nothing.
  *
- * Refreshed when [window] draws a frame, at most [framesPerSecond], while [running] and some
- * attached glass is shown.
+ * Copied only after [window] drew a frame (never on a timer alone), at most [framesPerSecond],
+ * while [running] and some attached glass is shown: a static window under a dialog costs one copy.
  */
 @RequiresApi(Build.VERSION_CODES.O)
 class WindowBackdrop @JvmOverloads constructor(
@@ -33,7 +33,18 @@ class WindowBackdrop @JvmOverloads constructor(
 ) : PixelCopyBackdrop(copyWidth, copyHeight) {
 
     private val loc = IntArray(2)
-    private val onDraw = ViewTreeObserver.OnDrawListener { if (running && panes.isNotEmpty()) schedule() }
+    /** The window drew since the last copy (only then is there something new to copy). */
+    @Volatile private var dirty = true
+    private val onDraw = ViewTreeObserver.OnDrawListener {
+        dirty = true
+        if (running && panes.isNotEmpty()) schedule()
+    }
+
+    override fun sourceChanged(): Boolean = dirty
+
+    override fun onCopyStarted() {
+        dirty = false
+    }
     private var observing: ViewTreeObserver? = null
 
     init {
