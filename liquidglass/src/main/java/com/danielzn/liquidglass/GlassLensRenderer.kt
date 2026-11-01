@@ -442,6 +442,25 @@ internal class GlassLensRenderer {
             lastMargin = margin
         }
 
+        // Nothing the recording depends on changed (position, size, look, the underlay's picture, which
+        // of the source's own children are visible, a forced refresh): draw the node as it is. Its
+        // children's changes still show (they are referenced, not copied), and HWUI keeps its layer: an
+        // animation elsewhere in the window (a wiggling tile over the dock) re-renders no glass.
+        val sig = sourceSignature(parent)
+        val underlayV = surface.glassUnderlay?.underlayVersion ?: 0
+        val forceV = surface.glassBackdropVersion
+        val unchanged = recorded && params === lastRecordedParams && offsetX == lastOffX && offsetY == lastOffY &&
+            width == lastRecW && height == lastRecH && margin == lastRecMargin && sig == lastSig &&
+            underlayV == lastUnderlayV && forceV == lastForceV && parent === lastSource && x == lastX && y == lastY
+        if (unchanged) {
+            canvas.drawRenderNode(if (params.outward) layerNode else renderNode)
+            return true
+        }
+        recorded = true
+        lastRecordedParams = params; lastOffX = offsetX; lastOffY = offsetY; lastRecW = width; lastRecH = height
+        lastRecMargin = margin; lastSig = sig; lastUnderlayV = underlayV; lastForceV = forceV; lastSource = parent
+        lastX = x; lastY = y
+
         if (params.outward) {
             // 见 layerNode 的说明：带效果的节点画进外层合成节点，让着色器的输出区覆盖整个录制区
             renderNode.setPosition(0, 0, recW, recH)
@@ -467,6 +486,33 @@ internal class GlassLensRenderer {
             canvas.drawRenderNode(renderNode)
         }
         return true
+    }
+
+    private var recorded = false
+    private var lastRecordedParams: LensParams? = null
+    private var lastOffX = Float.NaN
+    private var lastOffY = Float.NaN
+    private var lastRecW = -1
+    private var lastRecH = -1
+    private var lastRecMargin = -1
+    private var lastSig = 0
+    private var lastUnderlayV = 0
+    private var lastForceV = 0
+    private var lastSource: View? = null
+    private var lastX = 0
+    private var lastY = 0
+
+    /** Which direct children of [source] would be drawn (their own changes need no re-record). */
+    private fun sourceSignature(source: View): Int {
+        var h = source.width * 31 + source.height
+        if (source is android.view.ViewGroup) {
+            for (i in 0 until source.childCount) {
+                val c = source.getChildAt(i)
+                h = h * 31 + System.identityHashCode(c)
+                h = h * 31 + c.visibility
+            }
+        }
+        return h
     }
 
     /** 把背景来源画进 renderNode（节点局部坐标，原点在外扩后的录制区左上角） */
@@ -653,6 +699,8 @@ internal class GlassLensRenderer {
     }
 
     fun release() {
+        recorded = false
+        lastSource = null
         renderNode.discardDisplayList()
         blurNode.discardDisplayList()
         blurNodeRadius = Float.NaN

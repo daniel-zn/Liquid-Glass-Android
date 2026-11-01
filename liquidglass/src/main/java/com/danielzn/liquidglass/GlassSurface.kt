@@ -20,6 +20,9 @@ interface GlassSurface {
 
     /** True while this glass's own backdrop is being recorded: its draw() must draw nothing. */
     var glassCapturing: Boolean
+
+    /** Bumped to force a re-record (the backdrop changed in a way the glass can't see). */
+    val glassBackdropVersion: Int get() = 0
 }
 
 /**
@@ -30,4 +33,7 @@ interface GlassSurface {
  */
 interface BackdropUnderlay {
     fun drawUnderlay(canvas: Canvas)
+
+    /** Changes whenever what [drawUnderlay] draws changes (a new copy): glass re-records only then. */
+    val underlayVersion: Int get() = 0
 }

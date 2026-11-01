@@ -116,6 +116,9 @@ abstract class PixelCopyBackdrop(
         main.post(tick)
     }
 
+    private var version = 0
+    override val underlayVersion: Int get() = version
+
     /** The picture to draw, or null before the first copy. */
     val frame: Bitmap?
         get() = front.takeIf { it >= 0 }?.let { buffers[it] }
@@ -187,6 +190,7 @@ abstract class PixelCopyBackdrop(
         val ms = (SystemClock.uptimeMillis() - requestedAt).toFloat()
         if (lastResult == PixelCopy.SUCCESS) {
             front = back
+            version++
             copies++
             lastCopyMs = ms
             totalCopyMs += ms

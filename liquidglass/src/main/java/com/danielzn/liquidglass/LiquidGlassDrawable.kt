@@ -147,7 +147,13 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
     fun getLook(): GlassLook = look.copy()
 
     /** The backdrop's content changed in a way the glass can't see: redraw once. */
-    fun invalidateBackdrop() = invalidateSelf()
+    fun invalidateBackdrop() {
+        backdropVersion++
+        invalidateSelf()
+    }
+
+    private var backdropVersion = 0
+    override val glassBackdropVersion: Int get() = backdropVersion
 
     /**
      * Called at the start of every draw: a subclass may set [backdropSource] and

@@ -63,6 +63,8 @@ class WindowBackdrop @JvmOverloads constructor(
         super.drawUnderlay(canvas)
     }
 
+    override val underlayVersion: Int get() = super.underlayVersion * 31 + (under?.underlayVersion ?: 0)
+
     override fun attach(glass: View) {
         (under as? PixelCopyBackdrop)?.attach(glass)
         val d = decor
