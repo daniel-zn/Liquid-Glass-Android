@@ -134,7 +134,7 @@ internal class BackdropCapture {
         if (host !is ViewGroup) return
         for (i in 0 until host.childCount) {
             val child = host.getChildAt(i)
-            if (child === except || child !is GlassSurface) continue
+            if (child === except || !(child is GlassSurface || child.background is GlassSurface)) continue
             if (child.visibility == View.VISIBLE) {
                 child.setTransitionVisibility(View.INVISIBLE)
                 nestedHidden.add(child)

@@ -371,14 +371,31 @@ internal class GlassLensRenderer {
         params: LensParams,
         margin: Int
     ): Boolean {
+        val host = glassView as? GlassSurface ?: return false
+        return draw(canvas, glassView, host, 0, 0, glassView.width, glassView.height, params, margin)
+    }
+
+    /**
+     * Draws lens glass for [surface] over the rectangle ([x], [y], [width], [height]) of [hostView]
+     * (view-local coordinates; the canvas origin is the view's top-left). [hostView] is hidden from
+     * its own backdrop recording.
+     */
+    fun draw(
+        canvas: Canvas,
+        hostView: View,
+        surface: GlassSurface,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        params: LensParams,
+        margin: Int
+    ): Boolean {
         if (shaderBroken) return false
         if (!canvas.isHardwareAccelerated) return false
-        // 背景来源：默认直接父容器，setBackdropSource 后为指定视图（可跨层级）
-        val host = glassView as? GlassSurface ?: return false
-        val parent = host.glassBackdropSource ?: return false
-        val width = glassView.width
-        val height = glassView.height
+        val parent = surface.glassBackdropSource ?: return false
         if (width <= 0 || height <= 0) return false
+        val glassView = hostView
 
         val sh = shader ?: try {
             RuntimeShader(LENS_AGSL).also { shader = it }
@@ -393,8 +410,8 @@ internal class GlassLensRenderer {
         // 另一个 window（Dialog/PopupWindow）时也成立）
         glassView.getLocationOnScreen(location)
         parent.getLocationOnScreen(parentLocation)
-        val offsetX = (location[0] - parentLocation[0]).toFloat()
-        val offsetY = (location[1] - parentLocation[1]).toFloat()
+        val offsetX = (location[0] + x - parentLocation[0]).toFloat()
+        val offsetY = (location[1] + y - parentLocation[1]).toFloat()
 
         val recW = width + 2 * margin
         val recH = height + 2 * margin
@@ -422,8 +439,8 @@ internal class GlassLensRenderer {
         if (params.outward) {
             // 见 layerNode 的说明：带效果的节点画进外层合成节点，让着色器的输出区覆盖整个录制区
             renderNode.setPosition(0, 0, recW, recH)
-            recordBackdrop(parent, glassView, offsetX, offsetY, margin, recW, recH)
-            layerNode.setPosition(-margin, -margin, width + margin, height + margin)
+            recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
+            layerNode.setPosition(x - margin, y - margin, x + width + margin, y + height + margin)
             val layerCanvas = layerNode.beginRecording(recW, recH)
             try {
                 layerCanvas.drawRenderNode(renderNode)
@@ -433,8 +450,8 @@ internal class GlassLensRenderer {
             canvas.drawRenderNode(layerNode)
         } else {
             // 录制区域向四周外扩 margin：模糊在边缘处能采到真实内容而非透明黑
-            renderNode.setPosition(-margin, -margin, width + margin, height + margin)
-            recordBackdrop(parent, glassView, offsetX, offsetY, margin, recW, recH)
+            renderNode.setPosition(x - margin, y - margin, x + width + margin, y + height + margin)
+            recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
             // 形状覆盖率由着色器输出（形状外 alpha=0），无需 clipPath
             canvas.drawRenderNode(renderNode)
         }
@@ -445,6 +462,7 @@ internal class GlassLensRenderer {
     private fun recordBackdrop(
         parent: View,
         glassView: View,
+        host: GlassSurface,
         offsetX: Float,
         offsetY: Float,
         margin: Int,
@@ -454,7 +472,6 @@ internal class GlassLensRenderer {
         val recordingCanvas = renderNode.beginRecording(recW, recH)
         try {
             recordingCanvas.translate(margin - offsetX, margin - offsetY)
-            val host = glassView as GlassSurface
             host.glassCapturing = true
             // 硬件画布上父视图绘制子视图不走 View.draw，isCapturingBackdrop 拦不住
             // 自己；跳过自身、以及跨层级祖先的重入/成环处理都在 BackdropCapture 里

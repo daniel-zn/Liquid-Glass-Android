@@ -3,14 +3,14 @@ package com.danielzn.liquidglass
 import kotlin.math.max
 import kotlin.math.min
 
-/** Pure geometry for [GlassPane] (no Android types, unit-tested on the JVM). */
+/** Pure geometry for [GlassPane] (no Android types, unit-tested on the JVM) for [LiquidGlassDrawable]. */
 internal object GlassGeometry {
 
     /** Shapes under this short side (dp) get a proportionally smaller bend. */
     const val REF_DP = 110f
 
     /** The lens parameters for a [w] x [h] px pane with [cornerRadius] px corners. */
-    fun lensParams(look: GlassPane.Look, w: Float, h: Float, cornerRadius: Float, density: Float): GlassLensRenderer.LensParams {
+    fun lensParams(look: GlassLook, w: Float, h: Float, cornerRadius: Float, density: Float): GlassLensRenderer.LensParams {
         val hw = max(w / 2f, 1f)
         val hh = max(h / 2f, 1f)
         val r = cornerRadius.coerceIn(0f, min(hw, hh))

@@ -10,7 +10,7 @@ class GlassGeometryTest {
 
     @Test
     fun capsuleRadiusIsCappedAtHalfTheShortSide() {
-        val p = GlassGeometry.lensParams(GlassPane.Look(), 300f, 80f, 999f, density)
+        val p = GlassGeometry.lensParams(GlassLook(), 300f, 80f, 999f, density)
         assertEquals(40f, p.radius1TL, 0f)
         assertEquals(40f, p.radius1BR, 0f)
         assertEquals(150f, p.shape1HW, 0f)
@@ -19,7 +19,7 @@ class GlassGeometryTest {
 
     @Test
     fun largePanelKeepsTheRequestedLens() {
-        val look = GlassPane.Look(bevel = 30f, refraction = 50f)
+        val look = GlassLook(bevel = 30f, refraction = 50f)
         val p = GlassGeometry.lensParams(look, 1200f, 800f, 56f, density)
         assertEquals(30f, p.bevel, 0f)
         assertEquals(50f, p.refract, 0f)
@@ -28,7 +28,7 @@ class GlassGeometryTest {
 
     @Test
     fun smallControlGetsAProportionallySmallerBend() {
-        val look = GlassPane.Look(bevel = 30f, refraction = 50f)
+        val look = GlassLook(bevel = 30f, refraction = 50f)
         // 48 px short side at density 2 (24 dp, under the 110 dp reference)
         val p = GlassGeometry.lensParams(look, 48f, 48f, 24f, density)
         assertEquals(48f * 0.3f, p.bevel, 0.001f)
@@ -39,7 +39,7 @@ class GlassGeometryTest {
 
     @Test
     fun valuesAreClampedToTheShaderRanges() {
-        val look = GlassPane.Look(dispersion = 3f, dim = 2f, specular = -1f, blurRadius = -5f, falloff = -1f)
+        val look = GlassLook(dispersion = 3f, dim = 2f, specular = -1f, blurRadius = -5f, falloff = -1f)
         val p = GlassGeometry.lensParams(look, 400f, 400f, 0f, density)
         assertEquals(0.9f, p.dispersion, 0f)
         assertEquals(1f, p.dim, 0f)
@@ -52,15 +52,15 @@ class GlassGeometryTest {
 
     @Test
     fun blurIsQuantisedToHalfPixelsSoTinyChangesDontRebuildTheEffect() {
-        val a = GlassGeometry.lensParams(GlassPane.Look(blurRadius = 24.1f), 400f, 400f, 0f, density)
-        val b = GlassGeometry.lensParams(GlassPane.Look(blurRadius = 24.3f), 400f, 400f, 0f, density)
+        val a = GlassGeometry.lensParams(GlassLook(blurRadius = 24.1f), 400f, 400f, 0f, density)
+        val b = GlassGeometry.lensParams(GlassLook(blurRadius = 24.3f), 400f, 400f, 0f, density)
         assertEquals(a, b)
     }
 
     @Test
     fun sameInputsGiveEqualParams() {
-        val a = GlassGeometry.lensParams(GlassPane.Look(), 640f, 360f, 32f, density)
-        val b = GlassGeometry.lensParams(GlassPane.Look(), 640f, 360f, 32f, density)
+        val a = GlassGeometry.lensParams(GlassLook(), 640f, 360f, 32f, density)
+        val b = GlassGeometry.lensParams(GlassLook(), 640f, 360f, 32f, density)
         assertEquals(a, b)
     }
 

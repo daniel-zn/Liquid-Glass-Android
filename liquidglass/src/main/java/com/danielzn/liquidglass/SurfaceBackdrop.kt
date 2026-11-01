@@ -47,7 +47,7 @@ class SurfaceBackdrop @JvmOverloads constructor(
         set(value) {
             if (field == value) return
             field = value
-            if (value) refresh() else { main.removeCallbacks(tick); pending = false }
+            if (value) refresh() else { main.removeCallbacks(tick); scheduled = false; pending = false }
         }
 
     /** Copy statistics (for measuring): copies done, failures, mean and worst ms per copy. */
@@ -74,7 +74,8 @@ class SurfaceBackdrop @JvmOverloads constructor(
     private val dst = Rect()
     private val loc = IntArray(2)
 
-    private val tick = Runnable { copyNow() }
+    private var scheduled = false
+    private val tick = Runnable { scheduled = false; copyNow() }
     private val delivered = Runnable { onCopied() }
     private var lastResult = PixelCopy.SUCCESS
 
@@ -83,7 +84,7 @@ class SurfaceBackdrop @JvmOverloads constructor(
         main.post(delivered)
     }
 
-    /** Glass that shows this backdrop ([GlassPane] attaches itself when it is the underlay). */
+    /** Glass that shows this backdrop (a [LiquidGlassDrawable]'s host attaches itself when it is the underlay). */
     fun attach(glass: View) {
         if (!panes.contains(glass)) panes.add(glass)
         if (front < 0 || framesPerSecond > 0f) schedule()
@@ -93,12 +94,15 @@ class SurfaceBackdrop @JvmOverloads constructor(
         panes.remove(glass)
     }
 
-    /** An attached glass was shown or hidden. */
-    fun onPaneVisibilityChanged() = schedule()
+    /** An attached glass drew (it may have just been shown again): keep copying if idle. */
+    fun onGlassDrawn() {
+        if (running && !pending && !scheduled) schedule()
+    }
 
     /** Copy once now (a new clip, a seek), then continue at [framesPerSecond]. */
     fun refresh() {
         main.removeCallbacks(tick)
+        scheduled = true
         main.post(tick)
     }
 
@@ -131,9 +135,11 @@ class SurfaceBackdrop @JvmOverloads constructor(
 
     private fun schedule() {
         main.removeCallbacks(tick)
+        scheduled = false
         if (!running || pending) return
         if (!anyShown()) return
         if (framesPerSecond <= 0f && front >= 0) return
+        scheduled = true
         main.postDelayed(tick, GlassGeometry.nextCopyDelay(framesPerSecond, requestedAt, SystemClock.uptimeMillis()))
     }
 
