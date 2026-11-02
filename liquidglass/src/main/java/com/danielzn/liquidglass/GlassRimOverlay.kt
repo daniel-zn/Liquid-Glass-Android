@@ -157,6 +157,9 @@ class GlassRimOverlay(
         observer = o
     }
 
+    /** Shown panes now (measuring). */
+    fun paneCount(): Int = panes.size
+
     /** Re-checks which panes are shown (every UI frame of the window, cheap: a short list). */
     fun refresh() {
         var n = 0
