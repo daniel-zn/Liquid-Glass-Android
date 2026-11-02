@@ -260,6 +260,9 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         val t0 = SystemClock.elapsedRealtimeNanos()
         EGL14.eglMakeCurrent(display, t.egl, t.egl, context)
         if (program == 0) build()
+        // The context is shared with the decoder's readback, which leaves its offscreen framebuffer bound:
+        // draw into this layer's window surface (the default framebuffer).
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         GLES20.glViewport(0, 0, o.surfaceW, o.surfaceH)
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         GLES20.glClearColor(0f, 0f, 0f, 0f)
