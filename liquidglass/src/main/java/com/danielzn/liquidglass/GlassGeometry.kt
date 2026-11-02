@@ -42,7 +42,8 @@ internal object GlassGeometry {
             press = 0f,
             touchX = 0f, touchY = 0f, touchAmp = 0f,
             backdropScale = look.backdropScale.coerceIn(0.1f, 1f),
-            clearInterior = look.clearInterior
+            clearInterior = look.clearInterior,
+            clearVeil = look.clearVeil.coerceIn(0f, 0.5f)
         )
     }
 

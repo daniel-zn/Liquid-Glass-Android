@@ -98,4 +98,12 @@ class GlassGeometryTest {
         assertEquals(true, c.clearInterior)
         assertTrue(c != GlassGeometry.lensParams(GlassLook(), 400f, 400f, 0f, density))
     }
+
+    @Test
+    fun clearVeilIsPassedAndClamped() {
+        assertEquals(0f, GlassGeometry.lensParams(GlassLook(), 400f, 400f, 0f, density).clearVeil, 0f)
+        assertEquals(0.07f, GlassGeometry.lensParams(GlassLook(clearInterior = true, clearVeil = 0.07f), 400f, 400f, 0f, density).clearVeil, 0f)
+        assertEquals(0.5f, GlassGeometry.lensParams(GlassLook(clearVeil = 3f), 400f, 400f, 0f, density).clearVeil, 0f)
+        assertEquals(0f, GlassGeometry.lensParams(GlassLook(clearVeil = -1f), 400f, 400f, 0f, density).clearVeil, 0f)
+    }
 }

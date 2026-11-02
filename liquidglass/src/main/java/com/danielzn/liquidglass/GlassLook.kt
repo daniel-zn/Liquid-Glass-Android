@@ -39,17 +39,22 @@ class GlassLook @JvmOverloads constructor(
      * inside is transparent, so the real content behind shows at its own brightness and frame rate
      * (e.g. a video on its own display plane). The backdrop then only matters for the rim band.
      */
-    @JvmField var clearInterior: Boolean = false
+    @JvmField var clearInterior: Boolean = false,
+    /**
+     * With [clearInterior]: a faint neutral grey over the transparent inside (its opacity, 0-0.5; e.g.
+     * 0.07): what's behind is lifted and compressed a little toward mid-grey, no colour, no blur.
+     */
+    @JvmField var clearVeil: Float = 0f
 ) {
     fun copy(): GlassLook = GlassLook(
         blurRadius, bevel, refraction, falloff, dispersion, specular, saturation, tint, dim,
-        glassTint, lightX, lightY, backdropScale, clearInterior
+        glassTint, lightX, lightY, backdropScale, clearInterior, clearVeil
     )
 
     fun set(o: GlassLook) {
         blurRadius = o.blurRadius; bevel = o.bevel; refraction = o.refraction; falloff = o.falloff
         dispersion = o.dispersion; specular = o.specular; saturation = o.saturation; tint = o.tint
         dim = o.dim; glassTint = o.glassTint; lightX = o.lightX; lightY = o.lightY
-        backdropScale = o.backdropScale; clearInterior = o.clearInterior
+        backdropScale = o.backdropScale; clearInterior = o.clearInterior; clearVeil = o.clearVeil
     }
 }

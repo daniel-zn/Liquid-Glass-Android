@@ -81,6 +81,7 @@ internal class GlassLensRenderer {
             uniform float2 touchPos;
             uniform float  touchAmp;
             uniform float  clearInterior; // 1: away from the rim the glass is transparent (what's behind shows itself)
+            uniform float  clearVeil;     // opacity of a neutral mid-grey veil over the clear inside (0 = none)
 
             float sdRoundedBox(float2 p, float2 b, float r) {
                 float2 q = abs(p) - b + r;
@@ -135,7 +136,10 @@ internal class GlassLensRenderer {
                 // Clear interior: nothing to draw there, the real content behind shows through (a video on
                 // its own plane keeps its own brightness, colour processing and frame rate).
                 if (interior && clearInterior > 0.5) {
-                    return half4(0.0);
+                    // Only a faint neutral veil (premultiplied mid-grey): lifts dark and tames bright content a
+                    // little, as Apple's clear glass does, without colour, blur or refraction.
+                    float v = clearVeil * cov;
+                    return half4(half3(0.5 * v), half(v));
                 }
 
                 float2 n = float2(0.0, -1.0);
@@ -294,8 +298,10 @@ internal class GlassLensRenderer {
                     // Only the rim is drawn: the refracted band fades out towards the inside, the rim light
                     // stays at full strength (premultiplied: specular adds light where the glass is clear).
                     float a = 1.0 - smoothstep(0.35, 1.0, t);
-                    float3 rgb = clamp((col - float3(specV)) * a + float3(specV), float3(0.0), float3(1.0));
-                    return half4(half3(rgb * cov), half(clamp(a + specV, 0.0, 1.0) * cov));
+                    // Where the rim fades out, the veil takes over (the same faint grey as the inside).
+                    float v = clearVeil * (1.0 - a);
+                    float3 rgb = clamp((col - float3(specV)) * a + float3(0.5 * v) + float3(specV), float3(0.0), float3(1.0));
+                    return half4(half3(rgb * cov), half(clamp(a + v + specV, 0.0, 1.0) * cov));
                 }
                 return half4(half3(col * cov), half(cov));
             }
@@ -336,7 +342,9 @@ internal class GlassLensRenderer {
         /** < 1: the backdrop is recorded and blurred at this scale, then upscaled under the full-res lens. */
         val backdropScale: Float = 1f,
         /** Draw the rim band only; the interior stays transparent. */
-        val clearInterior: Boolean = false
+        val clearInterior: Boolean = false,
+        /** With [clearInterior]: opacity of a neutral mid-grey veil over the transparent inside. */
+        val clearVeil: Float = 0f
     )
 
     private val renderNode = RenderNode("LiquidGlassLens")
@@ -703,6 +711,7 @@ internal class GlassLensRenderer {
         sh.setFloatUniform("touchPos", p.touchX, p.touchY)
         sh.setFloatUniform("touchAmp", p.touchAmp)
         sh.setFloatUniform("clearInterior", if (p.clearInterior) 1f else 0f)
+        sh.setFloatUniform("clearVeil", p.clearVeil)
 
         val lens = RenderEffect.createRuntimeShaderEffect(sh, "content")
         val scaled = p.backdropScale < 0.99f && p.backdropScale > 0f && !p.outward
