@@ -25,9 +25,13 @@ class GlassLook @JvmOverloads constructor(
     @JvmField var dim: Float = 0f,
     /** Coloured-glass body tint (absorption + scatter), straight-alpha ARGB, 0 = none. */
     @JvmField var glassTint: Int = 0,
-    /** Light direction (unit vector, screen space; default from the top left). */
-    @JvmField var lightX: Float = -0.6f,
-    @JvmField var lightY: Float = -0.8f,
+    /**
+     * Light direction (unit vector, screen space). Default straight from above: the rim light sits on the
+     * top and bottom edges, centred and fading toward the corners (as Apple's current glass has it; it
+     * used to be the top-left and bottom-right corners).
+     */
+    @JvmField var lightX: Float = 0f,
+    @JvmField var lightY: Float = -1f,
     /**
      * Records and blurs the backdrop at this scale (0.25 = a sixteenth of the pixels), then
      * upscales it under the full-resolution lens: much cheaper blur on weak GPUs, the rim stays
