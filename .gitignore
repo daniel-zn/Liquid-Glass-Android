@@ -81,3 +81,6 @@ cropped_frames/
 # 根目录的对照参考图（本地素材）
 /微信图片_*.png
 /背景.png
+
+# maintainer-local integrate patterns (never committed)
+.mercurius/*.local

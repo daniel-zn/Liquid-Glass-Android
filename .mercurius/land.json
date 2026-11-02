@@ -1,0 +1,5 @@
+{
+  "checks": [
+    { "name": "public-check", "run": "scripts/public-check.sh", "timeout": 5 }
+  ]
+}
