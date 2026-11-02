@@ -220,8 +220,82 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         return any
     }
 
+    /** Its state in one line (diagnostics). */
+    fun describe(): String = "playing=$playing file=${file?.name} gl=${glThread != null} picture=$haveTexture " +
+        "readbacks=$frames sinkFrames=$sinkFrames overlays=${overlays.size} sinks=${sinks.size} duration=${durationMs}ms"
+
+    /** Receives each picture as a GPU-backed bitmap (main thread), e.g. [LiveRim.setFrame]. */
+    fun interface FrameSink { fun onFrame(frame: Bitmap) }
+
+    private val sinks = java.util.concurrent.CopyOnWriteArrayList<FrameSink>()
+
+    /**
+     * Also delivers every picture to [sink] as a hardware bitmap: drawn by the GPU into a buffer of an
+     * ImageReader, wrapped without a copy (no readback, no PixelCopy).
+     */
+    @RequiresApi(29)
+    fun addFrameSink(sink: FrameSink) { if (!sinks.contains(sink)) sinks.add(sink) }
+    fun removeFrameSink(sink: FrameSink) { sinks.remove(sink) }
+
+    /** Statistics: pictures delivered to sinks, mean GPU-side ms to draw one into its buffer (GL thread). */
+    @Volatile var sinkFrames = 0; private set
+    @Volatile var meanSinkMs = 0f; private set
+
+    private var reader: android.media.ImageReader? = null
+    private var readerEgl: EGLSurface = EGL14.EGL_NO_SURFACE
+    private val held = ArrayDeque<android.media.Image>()
+    private val flippedQuad: FloatBuffer = ByteBuffer.allocateDirect(4 * 4 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
+        // a window surface's first row is its top (the readback quad is for glReadPixels' bottom-up rows)
+        put(floatArrayOf(-1f, -1f, 0f, 1f, 1f, -1f, 1f, 1f, -1f, 1f, 0f, 0f, 1f, 1f, 1f, 0f)); position(0)
+    }
+
+    @RequiresApi(29)
+    private fun renderToReader() {
+        if (reader == null) {
+            val r = android.media.ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 4,
+                android.hardware.HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or android.hardware.HardwareBuffer.USAGE_GPU_COLOR_OUTPUT)
+            r.setOnImageAvailableListener({ rd ->
+                val img = try { rd.acquireLatestImage() } catch (e: IllegalStateException) { null } ?: return@setOnImageAvailableListener
+                val hb = img.hardwareBuffer
+                if (hb == null) { img.close(); return@setOnImageAvailableListener }
+                val bmp = Bitmap.wrapHardwareBuffer(hb, android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB))
+                hb.close()
+                held.addLast(img)
+                while (held.size > 2) held.removeFirst().close()   // the UI may still draw the previous one
+                if (bmp != null) for (k in sinks) k.onFrame(bmp)
+            }, main)
+            reader = r
+            readerEgl = EGL14.eglCreateWindowSurface(eglDisplay, eglConfig!!, r.surface, intArrayOf(EGL14.EGL_NONE), 0)
+        }
+        if (readerEgl == EGL14.EGL_NO_SURFACE) return
+        val t0 = SystemClock.elapsedRealtimeNanos()
+        EGL14.eglMakeCurrent(eglDisplay, readerEgl, readerEgl, eglContext)
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        GLES20.glViewport(0, 0, width, height)
+        GLES20.glUseProgram(program)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTex)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "uOes"), 0)
+        GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uTex"), 1, false, texMatrix, 0)
+        val aPos = GLES20.glGetAttribLocation(program, "aPos")
+        val aUv = GLES20.glGetAttribLocation(program, "aUv")
+        flippedQuad.position(0)
+        GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 16, flippedQuad)
+        GLES20.glEnableVertexAttribArray(aPos)
+        flippedQuad.position(2)
+        GLES20.glVertexAttribPointer(aUv, 2, GLES20.GL_FLOAT, false, 16, flippedQuad)
+        GLES20.glEnableVertexAttribArray(aUv)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        EGL14.eglSwapBuffers(eglDisplay, readerEgl)
+        EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
+        val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6f
+        sinkFrames++
+        meanSinkMs += (ms - meanSinkMs) / sinkFrames
+    }
+
     /** Anything that wants pictures now: an overlay with a shown pane, or shown attached glass. */
     private fun wanted(): Boolean {
+        if (sinks.isNotEmpty()) return true
         // An overlay waiting for its first picture (it takes over only once it has one), or with glass.
         for (o in overlays) if (o.panes.isNotEmpty() || (!o.firstFrameSeen && o.surface != null)) return true
         return panes.isNotEmpty()
@@ -306,6 +380,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         lastTakenMs = now
         st.getTransformMatrix(texMatrix)
         haveTexture = true
+        if (sinks.isNotEmpty() && Build.VERSION.SDK_INT >= 29) renderToReader()
         if (overlays.isNotEmpty()) {
             renderOverlays(true)
             EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
@@ -348,6 +423,10 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     }
 
     private fun tearDownGl() {
+        if (readerEgl != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, readerEgl)
+        readerEgl = EGL14.EGL_NO_SURFACE
+        reader?.let { r -> main.post { held.forEach { it.close() }; held.clear(); r.close() } }
+        reader = null
         if (Build.VERSION.SDK_INT >= 33) (rim as? GlassRimRenderer)?.release()
         rim = null
         haveTexture = false

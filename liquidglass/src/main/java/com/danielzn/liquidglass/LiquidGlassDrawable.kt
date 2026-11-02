@@ -180,6 +180,13 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         if (h != null && trackedHost !== h) track(h)
         val b = bounds
         if (b.isEmpty) return
+        // Live video glass drawn here, in the window: only the rim, one shader over the current picture.
+        if (Build.VERSION.SDK_INT >= 33 && lensEnabled && h != null && drawLiveRim(canvas, h)) {
+            isLensActive = true
+            rememberPosition(h)
+            (backdropUnderlay as? GlassAttachable)?.onGlassDrawn()
+            return
+        }
         // Drawn by an overlay layer (live video glass): only say where we are and what lens; the layer
         // draws the glass itself from each new video picture, without this view being drawn again.
         if (Build.VERSION.SDK_INT >= 33 && lensEnabled && h != null && reportToOverlay(h)) {
@@ -219,6 +226,18 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
     }
 
     private val windowLoc = IntArray(2)
+    private var liveShader: Any? = null   // RuntimeShader (API 33+)
+    private val livePaint = Paint()
+
+    @androidx.annotation.RequiresApi(33)
+    private fun drawLiveRim(canvas: Canvas, h: View): Boolean {
+        val rim = backdropUnderlay as? LiveRim ?: return false
+        if (!canvas.isHardwareAccelerated) return false
+        val sh = (liveShader as? android.graphics.RuntimeShader) ?: android.graphics.RuntimeShader(LiveRim.AGSL).also { liveShader = it }
+        val b = bounds
+        val p = currentParams(b.width(), b.height(), h.resources.displayMetrics.density)
+        return rim.draw(canvas, h, b, p, alpha / 255f, sh, livePaint)
+    }
 
     @androidx.annotation.RequiresApi(33)
     private fun reportToOverlay(h: View): Boolean {
