@@ -63,6 +63,15 @@ class GlassRimOverlay(
     @Volatile var videoY = 0f
     @Volatile var videoW = 0f
     @Volatile var videoH = 0f
+    /**
+     * A full-layer picture drawn first, under the glass (premultiplied, stretched over the layer): the
+     * window's own readability scrim, moved down here so it doesn't darken the glass drawn over it. The
+     * glass refracts the video through it, as glass drawn in the UI refracts the scrimmed backdrop.
+     */
+    @Volatile var scrim: android.graphics.Bitmap? = null
+        set(value) { field = value; scrimVersion++; changed() }
+    @Volatile var scrimVersion = 0; private set
+
     /** The layer's top-left corner in its window's coordinates (panes report window positions). */
     @Volatile var originX = 0f
     @Volatile var originY = 0f
@@ -242,6 +251,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         }
         val panes = o.panes
         val v = o.version
+        val scrim = o.scrim
         if (panes.isEmpty()) {
             if (t.drawnEmpty && t.drawnVersion == v) return false
         } else if (!newFrame && t.drawnVersion == v) {
@@ -254,7 +264,8 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         GLES20.glClearColor(0f, 0f, 0f, 0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-        if (panes.isNotEmpty()) drawPanes(o, panes, oesTex, texMatrix)
+        if (scrim != null) drawScrim(o, scrim)
+        if (panes.isNotEmpty()) drawPanes(o, panes, oesTex, texMatrix, scrim != null)
         EGL14.eglSwapBuffers(display, t.egl)
         t.drawnVersion = v
         t.drawnEmpty = panes.isEmpty()
@@ -266,8 +277,55 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         return true
     }
 
-    private fun drawPanes(o: GlassRimOverlay, panes: Array<GlassRimOverlay.Pane>, oesTex: Int, texMatrix: FloatArray) {
+    private var scrimTex = 0
+    private var scrimProgram = 0
+    private val scrimVersions = HashMap<GlassRimOverlay, Int>()
+    private val full: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
+        put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0)
+    }
+
+    private fun bindScrim(o: GlassRimOverlay, bmp: android.graphics.Bitmap) {
+        if (scrimTex == 0) {
+            val tx = IntArray(1)
+            GLES20.glGenTextures(1, tx, 0)
+            scrimTex = tx[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, scrimTex)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        }
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, scrimTex)
+        if (scrimVersions[o] != o.scrimVersion) {
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+            scrimVersions[o] = o.scrimVersion
+        }
+    }
+
+    private fun drawScrim(o: GlassRimOverlay, bmp: android.graphics.Bitmap) {
+        if (scrimProgram == 0) {
+            scrimProgram = link("attribute vec2 aPos; varying vec2 vUv; void main() { gl_Position = vec4(aPos, 0.0, 1.0); vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); }",
+                "precision mediump float; uniform sampler2D uScrim; varying vec2 vUv; void main() { gl_FragColor = texture2D(uScrim, vUv); }")
+        }
+        bindScrim(o, bmp)
+        GLES20.glUseProgram(scrimProgram)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(scrimProgram, "uScrim"), 2)
+        GLES20.glDisable(GLES20.GL_BLEND)   // the layer was just cleared: the scrim is its first content
+        val aPos = GLES20.glGetAttribLocation(scrimProgram, "aPos")
+        GLES20.glEnableVertexAttribArray(aPos)
+        full.position(0)
+        GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 8, full)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+    }
+
+    private fun drawPanes(o: GlassRimOverlay, panes: Array<GlassRimOverlay.Pane>, oesTex: Int, texMatrix: FloatArray, scrimmed: Boolean) {
         GLES20.glUseProgram(program)
+        if (scrimmed) {
+            o.scrim?.let { bindScrim(o, it) }
+            GLES20.glUniform1i(u("uScrim"), 2)
+        }
+        GLES20.glUniform1f(u("uHasScrim"), if (scrimmed) 1f else 0f)
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -302,6 +360,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         }
         GLES20.glUniform4f(u("uVideoRect"), o.videoX, o.videoY, o.videoW.coerceAtLeast(1f), o.videoH.coerceAtLeast(1f))
         GLES20.glUniform1f(u("uSurfH"), o.surfaceH.toFloat())
+        GLES20.glUniform2f(u("uSurfSize"), o.surfaceW.toFloat(), o.surfaceH.toFloat())
         val aPos = GLES20.glGetAttribLocation(program, "aPos")
         GLES20.glEnableVertexAttribArray(aPos)
         val sw = o.surfaceW.toFloat()
@@ -343,6 +402,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
     fun forget(o: GlassRimOverlay) {
         targets.remove(o)?.let { EGL14.eglDestroySurface(display, it.egl) }
         copyVersions.remove(o)
+        scrimVersions.remove(o)
     }
 
     fun release() {
@@ -350,8 +410,29 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         targets.clear()
         if (program != 0) GLES20.glDeleteProgram(program)
         if (copyTex != 0) GLES20.glDeleteTextures(1, intArrayOf(copyTex), 0)
+        if (scrimTex != 0) GLES20.glDeleteTextures(1, intArrayOf(scrimTex), 0)
+        if (scrimProgram != 0) GLES20.glDeleteProgram(scrimProgram)
+        scrimTex = 0
+        scrimProgram = 0
         program = 0
         copyTex = 0
+    }
+
+    private fun link(vs: String, fs: String): Int {
+        fun shader(type: Int, src: String): Int {
+            val sh = GLES20.glCreateShader(type)
+            GLES20.glShaderSource(sh, src)
+            GLES20.glCompileShader(sh)
+            val ok = IntArray(1)
+            GLES20.glGetShaderiv(sh, GLES20.GL_COMPILE_STATUS, ok, 0)
+            if (ok[0] == 0) Log.w(GlassRimOverlay.TAG, "shader: " + GLES20.glGetShaderInfoLog(sh))
+            return sh
+        }
+        val p = GLES20.glCreateProgram()
+        GLES20.glAttachShader(p, shader(GLES20.GL_VERTEX_SHADER, vs))
+        GLES20.glAttachShader(p, shader(GLES20.GL_FRAGMENT_SHADER, fs))
+        GLES20.glLinkProgram(p)
+        return p
     }
 
     private fun build() {
@@ -381,6 +462,9 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             uniform mat4 uTex;
             uniform sampler2D uCopy;
             uniform float uHasCopy;
+            uniform sampler2D uScrim;
+            uniform float uHasScrim;
+            uniform vec2 uSurfSize;
             uniform vec4 uCopyRect;
             uniform vec4 uVideoRect;
             uniform float uSurfH;
@@ -397,6 +481,10 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 if (uHasCopy > 0.5) {
                     vec4 w = texture2D(uCopy, clamp((s - uCopyRect.xy) / uCopyRect.zw, 0.0, 1.0));
                     c = w.rgb + c * (1.0 - w.a);
+                }
+                if (uHasScrim > 0.5) {
+                    vec4 k = texture2D(uScrim, clamp(s / uSurfSize, 0.0, 1.0));
+                    c = k.rgb + c * (1.0 - k.a);
                 }
                 return c;
             }
