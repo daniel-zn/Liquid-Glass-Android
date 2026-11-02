@@ -43,12 +43,12 @@ class GlassRimOverlay(
 ) : BackdropUnderlay, GlassAttachable {
 
     /** One pane as drawn: position and size in the layer's pixels, its lens, its opacity. */
-    class Pane(val x: Float, val y: Float, val w: Float, val h: Float, val p: GlassLensRenderer.LensParams, val alpha: Float)
+    internal class Pane(val x: Float, val y: Float, val w: Float, val h: Float, val p: GlassLensRenderer.LensParams, val alpha: Float)
 
     private class Entry(val key: Any, val host: WeakReference<View>, var pane: Pane)
 
     private val entries = ArrayList<Entry>()
-    @Volatile var panes: Array<Pane> = emptyArray(); private set
+    @Volatile internal var panes: Array<Pane> = emptyArray(); private set
     /** Bumped whenever [panes] or the layer change. */
     @Volatile var version = 0; private set
     /** Called (main thread) when something to draw changed; the video source redraws then. */
@@ -126,7 +126,7 @@ class GlassRimOverlay(
     // ---- panes (main thread) -----------------------------------------------------------------
 
     /** [key]'s glass on [host] is at x, y (layer pixels), w x h, with lens [p] and opacity [alpha]. */
-    fun update(key: Any, host: View, x: Float, y: Float, w: Float, h: Float, p: GlassLensRenderer.LensParams, alpha: Float) {
+    internal fun update(key: Any, host: View, x: Float, y: Float, w: Float, h: Float, p: GlassLensRenderer.LensParams, alpha: Float) {
         val pane = Pane(x, y, w, h, p, alpha)
         val e = entries.firstOrNull { it.key === key }
         if (e == null) entries.add(Entry(key, WeakReference(host), pane)) else e.pane = pane
