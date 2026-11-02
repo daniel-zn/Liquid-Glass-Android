@@ -65,6 +65,7 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
             if (field === value) return
             val h = host
             if (h != null) (field as? GlassAttachable)?.detach(h)
+            if (Build.VERSION.SDK_INT >= 33) (field as? GlassRimOverlay)?.remove(this)
             field = value
             if (h != null && h.isAttachedToWindow) (value as? GlassAttachable)?.attach(h)
             invalidateSelf()
@@ -179,6 +180,14 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         if (h != null && trackedHost !== h) track(h)
         val b = bounds
         if (b.isEmpty) return
+        // Drawn by an overlay layer (live video glass): only say where we are and what lens; the layer
+        // draws the glass itself from each new video picture, without this view being drawn again.
+        if (Build.VERSION.SDK_INT >= 33 && lensEnabled && h != null && reportToOverlay(h)) {
+            isLensActive = true
+            rememberPosition(h)
+            (backdropUnderlay as? GlassAttachable)?.onGlassDrawn()
+            return
+        }
         // A fade (state changes, a parent's StateListDrawable) sets our alpha: the lens honours it
         // through a layer, only while it is under 255.
         val layer = if (alpha < 255 && lensEnabled) canvas.saveLayerAlpha(b.left.toFloat(), b.top.toFloat(),
@@ -207,6 +216,19 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         val b = bounds
         val p = currentParams(b.width(), b.height(), h.resources.displayMetrics.density)
         return renderer.draw(canvas, h, this, b.left, b.top, b.width(), b.height(), p, GlassGeometry.lensMargin(p.blurRadius))
+    }
+
+    private val windowLoc = IntArray(2)
+
+    @androidx.annotation.RequiresApi(33)
+    private fun reportToOverlay(h: View): Boolean {
+        val o = backdropUnderlay as? GlassRimOverlay ?: return false
+        val b = bounds
+        h.getLocationInWindow(windowLoc)
+        val p = currentParams(b.width(), b.height(), h.resources.displayMetrics.density)
+        o.update(this, h, windowLoc[0] + b.left - o.originX, windowLoc[1] + b.top - o.originY,
+            b.width().toFloat(), b.height().toFloat(), p, alpha / 255f * h.alpha)
+        return true
     }
 
     private fun currentParams(w: Int, hgt: Int, density: Float): GlassLensRenderer.LensParams {

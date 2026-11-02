@@ -186,6 +186,45 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     private var fboTex = 0
     private var program = 0
     private var surfaceTexture: SurfaceTexture? = null
+    private var eglConfig: EGLConfig? = null
+    private var rim: Any? = null   // GlassRimRenderer (API 33+)
+    private var haveTexture = false
+    private val overlays = java.util.concurrent.CopyOnWriteArrayList<GlassRimOverlay>()
+
+    /**
+     * Also draws [o] (all its glass panes, in its own compositor layer) from every new picture: the UI
+     * isn't invalidated for it. Without pictures read back for [attach]ed glass, nothing is read back.
+     */
+    @RequiresApi(33)
+    fun addOverlay(o: GlassRimOverlay) {
+        if (!overlays.contains(o)) overlays.add(o)
+        o.onChanged = Runnable { gl?.post(redrawOverlays) }
+        gl?.post(redrawOverlays)
+    }
+
+    @RequiresApi(33)
+    fun removeOverlay(o: GlassRimOverlay) {
+        overlays.remove(o)
+        o.onChanged = null
+        gl?.post { (rim as? GlassRimRenderer)?.forget(o) }
+    }
+
+    /** The panes moved or changed (no new picture): draw the overlays again with the last one. */
+    private val redrawOverlays = Runnable { if (haveTexture) renderOverlays(false) }
+
+    private fun renderOverlays(newFrame: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false
+        val r = rim as? GlassRimRenderer ?: return false
+        var any = false
+        for (o in overlays) if (r.render(o, oesTex, texMatrix, newFrame)) any = true
+        return any
+    }
+
+    /** Anything that wants pictures now: an overlay with a shown pane, or shown attached glass. */
+    private fun wanted(): Boolean {
+        for (o in overlays) if (o.panes.isNotEmpty()) return true
+        return panes.isNotEmpty()
+    }
     private var decoderSurface: Surface? = null
     private val texMatrix = FloatArray(16)
     private val pixels: ByteBuffer = ByteBuffer.allocateDirect(width * height * 4).order(ByteOrder.nativeOrder())
@@ -200,7 +239,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         val v = IntArray(2)
         EGL14.eglInitialize(eglDisplay, v, 0, v, 1)
         val attrs = intArrayOf(EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
-            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT, EGL14.EGL_NONE)
+            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT or EGL14.EGL_WINDOW_BIT, EGL14.EGL_NONE)
         val configs = arrayOfNulls<EGLConfig>(1)
         val n = IntArray(1)
         EGL14.eglChooseConfig(eglDisplay, attrs, 0, configs, 0, 1, n, 0)
@@ -208,6 +247,8 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
             intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0)
         eglSurface = EGL14.eglCreatePbufferSurface(eglDisplay, configs[0], intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
         EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
+        eglConfig = configs[0]
+        if (Build.VERSION.SDK_INT >= 33) rim = GlassRimRenderer(eglDisplay, configs[0]!!, eglContext)
 
         val t = IntArray(2)
         GLES20.glGenTextures(2, t, 0)
@@ -260,9 +301,17 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         val now = SystemClock.uptimeMillis()
         val fps = framesPerSecond
         if (fps > 0f && now - lastTakenMs < (1000f / fps) - 4) return
+        if (!wanted()) return
         lastTakenMs = now
-        val t0 = SystemClock.elapsedRealtimeNanos()
         st.getTransformMatrix(texMatrix)
+        haveTexture = true
+        if (overlays.isNotEmpty()) {
+            renderOverlays(true)
+            EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
+        }
+        // Pictures for glass drawn by the UI (attached panes): only if there is such glass.
+        if (panes.isEmpty()) return
+        val t0 = SystemClock.elapsedRealtimeNanos()
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo)
         GLES20.glViewport(0, 0, width, height)
         GLES20.glUseProgram(program)
@@ -298,6 +347,9 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     }
 
     private fun tearDownGl() {
+        if (Build.VERSION.SDK_INT >= 33) (rim as? GlassRimRenderer)?.release()
+        rim = null
+        haveTexture = false
         decoderSurface?.release(); decoderSurface = null
         surfaceTexture?.release(); surfaceTexture = null
         if (eglDisplay != EGL14.EGL_NO_DISPLAY) {

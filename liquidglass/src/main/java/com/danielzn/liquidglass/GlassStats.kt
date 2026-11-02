@@ -9,4 +9,6 @@ object GlassStats {
     /** WindowBackdrop: frames its source window drew while observed, and copies made of it. */
     @JvmField var windowDraws = 0
     @JvmField var windowCopies = 0
+    /** GlassRimOverlay: layer frames drawn (GL thread). */
+    @JvmField @Volatile var overlayFrames = 0
 }
