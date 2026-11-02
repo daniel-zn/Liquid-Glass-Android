@@ -36,6 +36,7 @@ class WindowBackdrop @JvmOverloads constructor(
     /** The window drew since the last copy (only then is there something new to copy). */
     @Volatile private var dirty = true
     private val onDraw = ViewTreeObserver.OnDrawListener {
+        GlassStats.windowDraws++
         dirty = true
         if (running && panes.isNotEmpty()) schedule()
     }
@@ -44,6 +45,7 @@ class WindowBackdrop @JvmOverloads constructor(
 
     override fun onCopyStarted() {
         dirty = false
+        GlassStats.windowCopies++
     }
     private var observing: ViewTreeObserver? = null
 

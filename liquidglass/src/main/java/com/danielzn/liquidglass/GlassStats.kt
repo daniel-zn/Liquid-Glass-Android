@@ -6,4 +6,7 @@ package com.danielzn.liquidglass
  */
 object GlassStats {
     @JvmField var lensRecords = 0
+    /** WindowBackdrop: frames its source window drew while observed, and copies made of it. */
+    @JvmField var windowDraws = 0
+    @JvmField var windowCopies = 0
 }
