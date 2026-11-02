@@ -35,7 +35,7 @@ import androidx.annotation.RequiresApi
 abstract class PixelCopyBackdrop(
     val copyWidth: Int,
     val copyHeight: Int
-) : BackdropUnderlay {
+) : BackdropUnderlay, GlassAttachable {
 
     /** True when a copy can be made now (the source exists and has a size). */
     protected abstract fun canCopy(): Boolean
@@ -104,17 +104,17 @@ abstract class PixelCopyBackdrop(
     }
 
     /** Glass that shows this backdrop (a [LiquidGlassDrawable]'s host attaches itself when it is the underlay). */
-    open fun attach(glass: View) {
+    override fun attach(glass: View) {
         if (!panes.contains(glass)) panes.add(glass)
         if (front < 0 || framesPerSecond > 0f) schedule()
     }
 
-    open fun detach(glass: View) {
+    override fun detach(glass: View) {
         panes.remove(glass)
     }
 
     /** An attached glass drew (it may have just been shown again): keep copying if idle. */
-    open fun onGlassDrawn() {
+    override fun onGlassDrawn() {
         if (running && !pending && !scheduled) schedule()
     }
 

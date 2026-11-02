@@ -79,7 +79,7 @@ class WindowBackdrop @JvmOverloads constructor(
     override val underlayVersion: Int get() = super.underlayVersion * 31 + (under?.underlayVersion ?: 0)
 
     override fun attach(glass: View) {
-        (under as? PixelCopyBackdrop)?.attach(glass)
+        (under as? GlassAttachable)?.attach(glass)
         val d = decor
         if (observing == null && d != null && d.viewTreeObserver.isAlive) {
             observing = d.viewTreeObserver.also { it.addOnDrawListener(onDraw) }
@@ -88,12 +88,12 @@ class WindowBackdrop @JvmOverloads constructor(
     }
 
     override fun detach(glass: View) {
-        (under as? PixelCopyBackdrop)?.detach(glass)
+        (under as? GlassAttachable)?.detach(glass)
         super.detach(glass)
     }
 
     override fun onGlassDrawn() {
-        (under as? PixelCopyBackdrop)?.onGlassDrawn()
+        (under as? GlassAttachable)?.onGlassDrawn()
         super.onGlassDrawn()
     }
 

@@ -37,3 +37,11 @@ interface BackdropUnderlay {
     /** Changes whenever what [drawUnderlay] draws changes (a new copy): glass re-records only then. */
     val underlayVersion: Int get() = 0
 }
+
+/** A backdrop source that invalidates the glass showing it (PixelCopy copies, a decoded proxy video). */
+interface GlassAttachable {
+    fun attach(glass: android.view.View)
+    fun detach(glass: android.view.View)
+    /** An attached glass drew (it may have just been shown again). */
+    fun onGlassDrawn() {}
+}

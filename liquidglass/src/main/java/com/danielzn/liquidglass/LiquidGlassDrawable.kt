@@ -64,9 +64,9 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         set(value) {
             if (field === value) return
             val h = host
-            if (h != null) (field as? PixelCopyBackdrop)?.detach(h)
+            if (h != null) (field as? GlassAttachable)?.detach(h)
             field = value
-            if (h != null && h.isAttachedToWindow) (value as? PixelCopyBackdrop)?.attach(h)
+            if (h != null && h.isAttachedToWindow) (value as? GlassAttachable)?.attach(h)
             invalidateSelf()
         }
 
@@ -111,12 +111,12 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
     private val attachListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(v: View) {
             v.viewTreeObserver.addOnPreDrawListener(preDraw)
-            (backdropUnderlay as? PixelCopyBackdrop)?.attach(v)
+            (backdropUnderlay as? GlassAttachable)?.attach(v)
         }
 
         override fun onViewDetachedFromWindow(v: View) {
             v.viewTreeObserver.removeOnPreDrawListener(preDraw)
-            (backdropUnderlay as? PixelCopyBackdrop)?.detach(v)
+            (backdropUnderlay as? GlassAttachable)?.detach(v)
             releaseLens()
         }
     }
@@ -187,7 +187,7 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         if (layer >= 0) canvas.restoreToCount(layer)
         if (!isLensActive) drawFallback(canvas, cornerRadiusFor(b.width(), b.height()))
         if (h != null) rememberPosition(h)
-        (backdropUnderlay as? PixelCopyBackdrop)?.onGlassDrawn()
+        (backdropUnderlay as? GlassAttachable)?.onGlassDrawn()
     }
 
     /** Paints the shape when there is no lens glass; [radius] is already capped (capsules). */
