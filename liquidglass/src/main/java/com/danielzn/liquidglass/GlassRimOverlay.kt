@@ -78,14 +78,13 @@ class GlassRimOverlay(
     /**
      * Creates the layer as a child of [parent] at z [layer] (relative to the parent's own content:
      * -1 = just under a window's UI; +1 = just over a video SurfaceView's picture), [w] x [h] pixels,
-     * applied through [apply] (e.g. AttachedSurfaceControl.applyTransactionOnDraw).
+     * applied at once.
      */
-    fun attachTo(parent: SurfaceControl, layer: Int, w: Int, h: Int, apply: (SurfaceControl.Transaction) -> Unit) {
+    fun attachTo(parent: SurfaceControl, layer: Int, w: Int, h: Int) {
         detachSurface()
         val sc = SurfaceControl.Builder().setName(name).setBufferSize(w, h).setFormat(PixelFormat.RGBA_8888)
             .setOpaque(false).setParent(parent).build()
-        val t = SurfaceControl.Transaction().setLayer(sc, layer).setVisibility(sc, true)
-        apply(t)
+        SurfaceControl.Transaction().setLayer(sc, layer).setVisibility(sc, true).apply()
         control = sc
         surfaceW = w
         surfaceH = h
