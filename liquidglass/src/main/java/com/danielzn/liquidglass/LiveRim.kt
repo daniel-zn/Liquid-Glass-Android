@@ -58,6 +58,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
         })
         video = s
         frames++
+        GlassStats.rimFrames++
         version++
         for (i in hosts.indices) if (hosts[i].isShown) hosts[i].invalidate()
         if (!firstSeen) {

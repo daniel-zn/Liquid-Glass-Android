@@ -11,4 +11,6 @@ object GlassStats {
     @JvmField var windowCopies = 0
     /** GlassRimOverlay: layer frames drawn (GL thread). */
     @JvmField @Volatile var overlayFrames = 0
+    /** LiveRim: pictures that redrew glass, any window (main thread). */
+    @JvmField var rimFrames = 0
 }
