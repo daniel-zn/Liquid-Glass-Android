@@ -115,6 +115,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     /** Starts (or switches to) [proxy] at [positionMs] of the main clip. */
     fun open(proxy: File, positionMs: Long) {
         close()
+        Log.i(TAG, "open ${proxy.name} at $positionMs ms")
         file = proxy
         basePosMs = positionMs
         baseWallMs = SystemClock.uptimeMillis()
@@ -217,6 +218,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         surfaceTexture = st
         val s = Surface(st)
         decoderSurface = s
+        Log.i(TAG, "GL ready (egl ${EGL14.eglGetError()}), texture $oesTex, fbo status ${GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)}")
         val f2 = file ?: return
         decodeThread = Thread({ decodeLoop(f2, s) }, "glass-video-decode").also { it.start() }
     }
@@ -273,6 +275,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         buffers[back].copyPixelsFromBuffer(pixels)
         val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6f
         frames++
+        if (frames == 1) Log.i(TAG, "first picture read back in ${"%.1f".format(ms)} ms")
         totalReadbackMs += ms
         meanReadbackMs = (totalReadbackMs / frames).toFloat()
         if (ms > worstReadbackMs) worstReadbackMs = ms
@@ -318,6 +321,8 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
             codec = createDecoder(mime)
             codec.configure(fmt, surface, null, 0)
             codec.start()
+            Log.i(TAG, "decoding ${f.name} with ${codec.name}, ${durationMs} ms")
+            var outputs = 0
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             while (playing) {
@@ -346,6 +351,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
                 val oi = codec.dequeueOutputBuffer(info, 5_000)
                 if (oi >= 0) {
                     val pts = info.presentationTimeUs / 1000
+                    if (outputs++ == 0) Log.i(TAG, "first decoded frame at $pts ms (clock ${position(SystemClock.uptimeMillis())} ms)")
                     // Show it when the clock reaches it; frames already more than 100 ms late are dropped.
                     while (playing && seekToMs < 0) {
                         val now = position(SystemClock.uptimeMillis())
