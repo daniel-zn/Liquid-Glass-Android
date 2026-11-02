@@ -64,13 +64,108 @@ class GlassRimOverlay(
     @Volatile var videoW = 0f
     @Volatile var videoH = 0f
     /**
-     * A full-layer picture drawn first, under the glass (premultiplied, stretched over the layer): the
-     * window's own readability scrim, moved down here so it doesn't darken the glass drawn over it. The
-     * glass refracts the video through it, as glass drawn in the UI refracts the scrimmed backdrop.
+     * A backdrop view of the window whose drawing moves into this layer, under the glass, so it can't
+     * darken the glass drawn over it (a readability scrim, a dim): its background (a solid colour, or
+     * rendered once into a picture) at its place, with its live alpha. The glass refracts it as glass
+     * drawn in the UI refracts the scrimmed backdrop.
      */
-    @Volatile var scrim: android.graphics.Bitmap? = null
-        set(value) { field = value; scrimVersion++; changed() }
-    @Volatile var scrimVersion = 0; private set
+    class Moved internal constructor(internal val view: View, internal val bitmap: android.graphics.Bitmap?, internal val color: Int,
+                                     internal val saved: android.graphics.drawable.Drawable?) {
+        @Volatile internal var x = 0f
+        @Volatile internal var y = 0f
+        @Volatile internal var w = 0f
+        @Volatile internal var h = 0f
+        @Volatile internal var alpha = 0f
+    }
+
+    private class Slot(val moved: Moved, val pass: Boolean, val own: Boolean)
+
+    /** Slots 0 and 1 are under [windowCopy] (they belong to the window under it), slot 2 over it. */
+    private val slots = arrayOfNulls<Slot>(SLOTS)
+    internal fun slotMoved(i: Int): Moved? = slots[i]?.moved
+    internal fun slotPass(i: Int): Boolean = slots[i]?.pass == true
+
+    /**
+     * Moves [view]'s background into slot [slot] (0-2): drawn here ([pass] true) and refracted by the
+     * glass; the view itself draws nothing until [restoreMoved] (its alpha and visibility still count).
+     */
+    fun move(slot: Int, view: View, pass: Boolean = true) {
+        val bg = view.background
+        val color = (bg as? android.graphics.drawable.ColorDrawable)?.color ?: 0
+        var bmp: android.graphics.Bitmap? = null
+        if (bg != null && bg !is android.graphics.drawable.ColorDrawable && view.width > 0 && view.height > 0) {
+            // Gradients: half resolution is plenty (smooth, filtered when drawn).
+            val bw = (view.width / 2).coerceAtLeast(1)
+            val bh = (view.height / 2).coerceAtLeast(1)
+            bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
+            val c = android.graphics.Canvas(bmp)
+            c.scale(bw / view.width.toFloat(), bh / view.height.toFloat())
+            val old = android.graphics.Rect(bg.bounds)
+            bg.setBounds(0, 0, view.width, view.height)
+            bg.draw(c)
+            bg.bounds = old
+        }
+        if (bg == null) return
+        restoreSlot(slot)
+        slots[slot] = Slot(Moved(view, bmp, color, bg), pass, true)
+        view.background = null
+        observe(view)
+        refresh()
+    }
+
+    /** Refracts (doesn't draw) [from]'s slot [fromSlot] in slot [slot]: e.g. home's scrim under another window's glass. */
+    fun share(slot: Int, from: GlassRimOverlay, fromSlot: Int) {
+        val m = from.slots[fromSlot]?.moved ?: return
+        restoreSlot(slot)
+        slots[slot] = Slot(m, false, false)
+        changed()
+    }
+
+    private fun restoreSlot(i: Int) {
+        val sl = slots[i] ?: return
+        if (sl.own) sl.moved.view.background = sl.moved.saved
+        slots[i] = null
+    }
+
+    /** Gives the moved backgrounds back to their views. */
+    fun restoreMoved() {
+        for (i in 0 until SLOTS) restoreSlot(i)
+        changed()
+    }
+
+    private val slotLoc = IntArray(2)
+
+    private fun refreshSlots(): Boolean {
+        var any = false
+        for (sl in slots) {
+            if (sl == null || !sl.own) continue
+            val m = sl.moved
+            val v = m.view
+            val a = if (v.isShown) v.alpha else 0f
+            v.getLocationInWindow(slotLoc)
+            val x = slotLoc[0] - originX
+            val y = slotLoc[1] - originY
+            if (a != m.alpha || x != m.x || y != m.y || v.width.toFloat() != m.w || v.height.toFloat() != m.h) {
+                m.alpha = a; m.x = x; m.y = y; m.w = v.width.toFloat(); m.h = v.height.toFloat()
+                any = true
+            }
+        }
+        return any
+    }
+
+    /** Called once (main thread) when the layer has shown its first picture since [resetFirstFrame]. */
+    @Volatile var onFirstFrame: Runnable? = null
+    @Volatile internal var firstFrameSeen = false
+    fun resetFirstFrame() { firstFrameSeen = false }
+
+    /** Shows or hides the layer (hidden: its last picture never lingers when the video stops). */
+    fun setShown(shown: Boolean) {
+        wantShown = shown
+        val sc = control ?: return
+        SurfaceControl.Transaction().setVisibility(sc, shown).apply()
+    }
+
+    private var wantShown = true
 
     /** The layer's top-left corner in its window's coordinates (panes report window positions). */
     @Volatile var originX = 0f
@@ -93,7 +188,7 @@ class GlassRimOverlay(
         detachSurface()
         val sc = SurfaceControl.Builder().setName(name).setBufferSize(w, h).setFormat(PixelFormat.RGBA_8888)
             .setOpaque(false).setParent(parent).build()
-        SurfaceControl.Transaction().setLayer(sc, layer).setVisibility(sc, true).apply()
+        SurfaceControl.Transaction().setLayer(sc, layer).setVisibility(sc, wantShown).apply()
         control = sc
         surfaceW = w
         surfaceH = h
@@ -110,7 +205,7 @@ class GlassRimOverlay(
         val sc = SurfaceControl.Builder().setName(name).setBufferSize(w, h).setFormat(PixelFormat.RGBA_8888)
             .setOpaque(false).build()
         val t = window.buildReparentTransaction(sc) ?: return
-        t.setLayer(sc, layer).setVisibility(sc, true)
+        t.setLayer(sc, layer).setVisibility(sc, wantShown)
         window.applyTransactionOnDraw(t)
         control = sc
         surfaceW = w
@@ -169,7 +264,8 @@ class GlassRimOverlay(
         for (e in entries) if (shown(e)) next[i++] = e.pane
         @Suppress("UNCHECKED_CAST")
         val arr = next as Array<Pane>
-        if (!same(arr, panes)) {
+        val slotsChanged = refreshSlots()
+        if (!same(arr, panes) || slotsChanged) {
             panes = arr
             changed()
         }
@@ -211,6 +307,7 @@ class GlassRimOverlay(
 
     companion object {
         const val TAG = "GlassRimOverlay"
+        internal const val SLOTS = 3
     }
 }
 
@@ -254,7 +351,6 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         }
         val panes = o.panes
         val v = o.version
-        val scrim = o.scrim
         if (panes.isEmpty()) {
             if (t.drawnEmpty && t.drawnVersion == v) return false
         } else if (!newFrame && t.drawnVersion == v) {
@@ -270,8 +366,8 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         GLES20.glClearColor(0f, 0f, 0f, 0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-        if (scrim != null) drawScrim(o, scrim)
-        if (panes.isNotEmpty()) drawPanes(o, panes, oesTex, texMatrix, scrim != null)
+        drawSlots(o)
+        if (panes.isNotEmpty()) drawPanes(o, panes, oesTex, texMatrix)
         if (o.frames % 20 == 0) {
             // Diagnostics: what this layer holds where its first pane's rim is (or the middle).
             val px = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
@@ -280,7 +376,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             val sy = (f?.let { it.y + 2f } ?: o.surfaceH / 2f).toInt()
             GLES20.glReadPixels(sx, o.surfaceH - 1 - sy, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, px)
             Log.i(GlassRimOverlay.TAG, "${o.name}: ${panes.size} panes" + (f?.let { " first at ${it.x.toInt()},${it.y.toInt()} ${it.w.toInt()}x${it.h.toInt()} a=${it.alpha}" } ?: "") +
-                ", scrim ${scrim != null}, layer ${o.surfaceW}x${o.surfaceH}, pixel at $sx,$sy = ${px.get(0).toInt() and 255},${px.get(1).toInt() and 255},${px.get(2).toInt() and 255},${px.get(3).toInt() and 255}, egl ${EGL14.eglGetError()}")
+                ", slots ${(0 until GlassRimOverlay.SLOTS).count { o.slotMoved(it) != null }}, layer ${o.surfaceW}x${o.surfaceH}, pixel at $sx,$sy = ${px.get(0).toInt() and 255},${px.get(1).toInt() and 255},${px.get(2).toInt() and 255},${px.get(3).toInt() and 255}, egl ${EGL14.eglGetError()}")
         }
         EGL14.eglSwapBuffers(display, t.egl)
         t.drawnVersion = v
@@ -290,58 +386,110 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         o.meanMs += (ms - o.meanMs) / o.frames
         if (ms > o.worstMs) o.worstMs = ms
         GlassStats.overlayFrames++
+        if (!o.firstFrameSeen) {
+            o.firstFrameSeen = true
+            o.onFirstFrame?.let { main.post(it) }
+        }
         return true
     }
 
-    private var scrimTex = 0
-    private var scrimProgram = 0
-    private val scrimVersions = HashMap<GlassRimOverlay, Int>()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var slotProgram = 0
+    /** Per moved picture: its texture (pictures are uploaded once). */
+    private val slotTex = HashMap<GlassRimOverlay.Moved, Int>()
+
+    private fun texFor(m: GlassRimOverlay.Moved): Int {
+        slotTex[m]?.let { return it }
+        val bmp = m.bitmap ?: return 0
+        val tx = IntArray(1)
+        GLES20.glGenTextures(1, tx, 0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tx[0])
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+        slotTex[m] = tx[0]
+        return tx[0]
+    }
+
+    /** Premultiplied colour of a solid moved view at its alpha. */
+    private fun colorOf(m: GlassRimOverlay.Moved): FloatArray {
+        val c = m.color
+        val a = ((c ushr 24) and 255) / 255f * m.alpha
+        return floatArrayOf(((c shr 16) and 255) / 255f * a, ((c shr 8) and 255) / 255f * a, (c and 255) / 255f * a, a)
+    }
+
+    /** The layer's own content under the glass: the moved views drawn here (passes), in slot order. */
+    private fun drawSlots(o: GlassRimOverlay) {
+        var any = false
+        for (i in 0 until GlassRimOverlay.SLOTS) if (o.slotPass(i) && (o.slotMoved(i)?.alpha ?: 0f) > 0.001f) any = true
+        if (!any) return
+        if (slotProgram == 0) {
+            slotProgram = link("attribute vec2 aPos; uniform vec4 uRect; uniform vec2 uSurf; varying vec2 vUv; void main() { vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); vec2 px = uRect.xy + vUv * uRect.zw; gl_Position = vec4(px.x / uSurf.x * 2.0 - 1.0, 1.0 - px.y / uSurf.y * 2.0, 0.0, 1.0); }",
+                "precision mediump float; uniform sampler2D uTexS; uniform float uIsColor; uniform vec4 uColor; uniform float uA; varying vec2 vUv; void main() { gl_FragColor = uIsColor > 0.5 ? uColor : texture2D(uTexS, vUv) * uA; }")
+        }
+        GLES20.glUseProgram(slotProgram)
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        GLES20.glUniform2f(GLES20.glGetUniformLocation(slotProgram, "uSurf"), o.surfaceW.toFloat(), o.surfaceH.toFloat())
+        val aPos = GLES20.glGetAttribLocation(slotProgram, "aPos")
+        GLES20.glEnableVertexAttribArray(aPos)
+        full.position(0)
+        GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 8, full)
+        for (i in 0 until GlassRimOverlay.SLOTS) {
+            val m = o.slotMoved(i) ?: continue
+            if (!o.slotPass(i) || m.alpha <= 0.001f) continue
+            GLES20.glUniform4f(GLES20.glGetUniformLocation(slotProgram, "uRect"), m.x, m.y, m.w, m.h)
+            val isColor = m.bitmap == null
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(slotProgram, "uIsColor"), if (isColor) 1f else 0f)
+            if (isColor) {
+                val c = colorOf(m)
+                GLES20.glUniform4f(GLES20.glGetUniformLocation(slotProgram, "uColor"), c[0], c[1], c[2], c[3])
+            } else {
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texFor(m))
+                GLES20.glUniform1i(GLES20.glGetUniformLocation(slotProgram, "uTexS"), 2)
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(slotProgram, "uA"), m.alpha)
+            }
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        }
+        GLES20.glDisable(GLES20.GL_BLEND)
+    }
+
+    /** The slots as the lens refracts them (texture units 2-4). */
+    private fun bindSlotsForLens(o: GlassRimOverlay) {
+        for (i in 0 until GlassRimOverlay.SLOTS) {
+            val m = o.slotMoved(i)
+            val on = m != null && m.alpha > 0.001f
+            // Every sampler on a unit of its own, used or not (sampler2D and the video's external sampler
+            // on one unit make the draw fail on some drivers).
+            GLES20.glUniform1i(u("uS${i}Tex"), 2 + i)
+            GLES20.glUniform1f(u("uS${i}On"), if (on) 1f else 0f)
+            if (!on) continue
+            m!!
+            GLES20.glUniform4f(u("uS${i}Rect"), m.x, m.y, m.w.coerceAtLeast(1f), m.h.coerceAtLeast(1f))
+            val isColor = m.bitmap == null
+            GLES20.glUniform1f(u("uS${i}IsColor"), if (isColor) 1f else 0f)
+            if (isColor) {
+                val c = colorOf(m)
+                GLES20.glUniform4f(u("uS${i}Color"), c[0], c[1], c[2], c[3])
+            } else {
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE2 + i)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texFor(m))
+                GLES20.glUniform1i(u("uS${i}Tex"), 2 + i)
+                GLES20.glUniform1f(u("uS${i}A"), m.alpha)
+            }
+        }
+    }
+
     private val full: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
         put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0)
     }
 
-    private fun bindScrim(o: GlassRimOverlay, bmp: android.graphics.Bitmap) {
-        if (scrimTex == 0) {
-            val tx = IntArray(1)
-            GLES20.glGenTextures(1, tx, 0)
-            scrimTex = tx[0]
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, scrimTex)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-        }
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE2)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, scrimTex)
-        if (scrimVersions[o] != o.scrimVersion) {
-            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
-            scrimVersions[o] = o.scrimVersion
-        }
-    }
-
-    private fun drawScrim(o: GlassRimOverlay, bmp: android.graphics.Bitmap) {
-        if (scrimProgram == 0) {
-            scrimProgram = link("attribute vec2 aPos; varying vec2 vUv; void main() { gl_Position = vec4(aPos, 0.0, 1.0); vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); }",
-                "precision mediump float; uniform sampler2D uScrim; varying vec2 vUv; void main() { gl_FragColor = texture2D(uScrim, vUv); }")
-        }
-        bindScrim(o, bmp)
-        GLES20.glUseProgram(scrimProgram)
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(scrimProgram, "uScrim"), 2)
-        GLES20.glDisable(GLES20.GL_BLEND)   // the layer was just cleared: the scrim is its first content
-        val aPos = GLES20.glGetAttribLocation(scrimProgram, "aPos")
-        GLES20.glEnableVertexAttribArray(aPos)
-        full.position(0)
-        GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 8, full)
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-    }
-
-    private fun drawPanes(o: GlassRimOverlay, panes: Array<GlassRimOverlay.Pane>, oesTex: Int, texMatrix: FloatArray, scrimmed: Boolean) {
+    private fun drawPanes(o: GlassRimOverlay, panes: Array<GlassRimOverlay.Pane>, oesTex: Int, texMatrix: FloatArray) {
         GLES20.glUseProgram(program)
-        if (scrimmed) {
-            o.scrim?.let { bindScrim(o, it) }
-            GLES20.glUniform1i(u("uScrim"), 2)
-        }
-        GLES20.glUniform1f(u("uHasScrim"), if (scrimmed) 1f else 0f)
+        bindSlotsForLens(o)
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -372,6 +520,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             // The copy is scaled down: it covers the window it was taken of (the layer's size here).
             GLES20.glUniform4f(u("uCopyRect"), o.copyX, o.copyY, o.surfaceW.toFloat(), o.surfaceH.toFloat())
         } else {
+            GLES20.glUniform1i(u("uCopy"), 1)
             GLES20.glUniform1f(u("uHasCopy"), 0f)
         }
         GLES20.glUniform4f(u("uVideoRect"), o.videoX, o.videoY, o.videoW.coerceAtLeast(1f), o.videoH.coerceAtLeast(1f))
@@ -418,7 +567,6 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
     fun forget(o: GlassRimOverlay) {
         targets.remove(o)?.let { EGL14.eglDestroySurface(display, it.egl) }
         copyVersions.remove(o)
-        scrimVersions.remove(o)
     }
 
     fun release() {
@@ -426,10 +574,10 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         targets.clear()
         if (program != 0) GLES20.glDeleteProgram(program)
         if (copyTex != 0) GLES20.glDeleteTextures(1, intArrayOf(copyTex), 0)
-        if (scrimTex != 0) GLES20.glDeleteTextures(1, intArrayOf(scrimTex), 0)
-        if (scrimProgram != 0) GLES20.glDeleteProgram(scrimProgram)
-        scrimTex = 0
-        scrimProgram = 0
+        for (t in slotTex.values) GLES20.glDeleteTextures(1, intArrayOf(t), 0)
+        slotTex.clear()
+        if (slotProgram != 0) GLES20.glDeleteProgram(slotProgram)
+        slotProgram = 0
         program = 0
         copyTex = 0
     }
@@ -478,9 +626,19 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             uniform mat4 uTex;
             uniform sampler2D uCopy;
             uniform float uHasCopy;
-            uniform sampler2D uScrim;
-            uniform float uHasScrim;
             uniform vec2 uSurfSize;
+            uniform float uS0On, uS1On, uS2On, uS0IsColor, uS1IsColor, uS2IsColor, uS0A, uS1A, uS2A;
+            uniform vec4 uS0Rect, uS1Rect, uS2Rect, uS0Color, uS1Color, uS2Color;
+            uniform sampler2D uS0Tex, uS1Tex, uS2Tex;
+
+            // A moved backdrop view over c (premultiplied "over").
+            vec3 over(vec3 c, vec2 s, float on, float isColor, vec4 rect, vec4 color, sampler2D tex, float a) {
+                if (on < 0.5) return c;
+                vec2 uv = (s - rect.xy) / rect.zw;
+                if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return c;
+                vec4 k = isColor > 0.5 ? color : texture2D(tex, uv) * a;
+                return k.rgb + c * (1.0 - k.a);
+            }
             uniform vec4 uCopyRect;
             uniform vec4 uVideoRect;
             uniform float uSurfH;
@@ -494,14 +652,13 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             vec3 behind(vec2 s) {
                 vec2 vu = clamp((s - uVideoRect.xy) / uVideoRect.zw, 0.0, 1.0);
                 vec3 c = texture2D(uVideo, (uTex * vec4(vu.x, 1.0 - vu.y, 0.0, 1.0)).xy).rgb;
+                c = over(c, s, uS0On, uS0IsColor, uS0Rect, uS0Color, uS0Tex, uS0A);
+                c = over(c, s, uS1On, uS1IsColor, uS1Rect, uS1Color, uS1Tex, uS1A);
                 if (uHasCopy > 0.5) {
                     vec4 w = texture2D(uCopy, clamp((s - uCopyRect.xy) / uCopyRect.zw, 0.0, 1.0));
                     c = w.rgb + c * (1.0 - w.a);
                 }
-                if (uHasScrim > 0.5) {
-                    vec4 k = texture2D(uScrim, clamp(s / uSurfSize, 0.0, 1.0));
-                    c = k.rgb + c * (1.0 - k.a);
-                }
+                c = over(c, s, uS2On, uS2IsColor, uS2Rect, uS2Color, uS2Tex, uS2A);
                 return c;
             }
 

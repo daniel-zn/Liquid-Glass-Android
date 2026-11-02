@@ -222,7 +222,8 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
 
     /** Anything that wants pictures now: an overlay with a shown pane, or shown attached glass. */
     private fun wanted(): Boolean {
-        for (o in overlays) if (o.panes.isNotEmpty()) return true
+        // An overlay waiting for its first picture (it takes over only once it has one), or with glass.
+        for (o in overlays) if (o.panes.isNotEmpty() || (!o.firstFrameSeen && o.surface != null)) return true
         return panes.isNotEmpty()
     }
     private var decoderSurface: Surface? = null
