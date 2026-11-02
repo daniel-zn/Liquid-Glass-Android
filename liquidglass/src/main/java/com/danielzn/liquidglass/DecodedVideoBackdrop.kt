@@ -143,6 +143,17 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         }
     }
 
+    /** How late (ms, negative = early) a frame at [pts] is at clock [now], across the loop point. */
+    private fun lateness(now: Long, pts: Long): Long {
+        var late = now - pts
+        val d = durationMs
+        if (d > 0) {
+            if (late > d / 2) late -= d
+            if (late < -d / 2) late += d
+        }
+        return late
+    }
+
     private fun position(now: Long): Long {
         val p = basePosMs + (now - baseWallMs)
         val d = durationMs
@@ -325,6 +336,11 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
             var outputs = 0
             val info = MediaCodec.BufferInfo()
             var inputDone = false
+            // Setting up GL and the decoder takes a while (seconds on a slow device): start where the clock is
+            // now, not where it was at open().
+            seekToMs = position(SystemClock.uptimeMillis())
+            var lastShownMs = 0L
+            var lastCatchUpMs = 0L
             while (playing) {
                 val seek = seekToMs
                 if (seek >= 0) {
@@ -359,8 +375,19 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
                         if (ahead <= 0 || ahead > (durationMs / 2).coerceAtLeast(1000)) break
                         Thread.sleep(Math.min(ahead, 20))
                     }
-                    val late = position(SystemClock.uptimeMillis()) - pts
-                    codec.releaseOutputBuffer(oi, late in 0..100)
+                    val wall = SystemClock.uptimeMillis()
+                    val late = lateness(position(wall), pts)
+                    // Behind by more than 300 ms (a slow start, a busy device): jump ahead to the clock instead
+                    // of decoding through the backlog, at most once a second. A picture at least every 250 ms,
+                    // even a late one, so the glass never stalls on an old frame.
+                    if (late > 300 && wall - lastCatchUpMs > 1000) {
+                        lastCatchUpMs = wall
+                        val d = durationMs
+                        seekToMs = if (d > 0) (position(wall) + 300) % d else position(wall) + 300
+                    }
+                    val show = late in -50..100 || (late > 100 && wall - lastShownMs > 250)
+                    if (show) lastShownMs = wall
+                    codec.releaseOutputBuffer(oi, show)
                 }
             }
         } catch (e: Exception) {
