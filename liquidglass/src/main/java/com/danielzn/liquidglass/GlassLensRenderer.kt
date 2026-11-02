@@ -80,6 +80,7 @@ internal class GlassLensRenderer {
             uniform float  press;
             uniform float2 touchPos;
             uniform float  touchAmp;
+            uniform float  clearInterior; // 1: away from the rim the glass is transparent (what's behind shows itself)
 
             float sdRoundedBox(float2 p, float2 b, float r) {
                 float2 q = abs(p) - b + r;
@@ -131,6 +132,11 @@ internal class GlassLensRenderer {
                 // zero, so one sample is the whole result (most of a panel's pixels; no normal, no pow).
                 float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
                 bool interior = (-d > max(bevel, 3.0 + bandW) + 1.0) && touchAmp <= 0.001;
+                // Clear interior: nothing to draw there, the real content behind shows through (a video on
+                // its own plane keeps its own brightness, colour processing and frame rate).
+                if (interior && clearInterior > 0.5) {
+                    return half4(0.0);
+                }
 
                 float2 n = float2(0.0, -1.0);
                 if (!interior) {
@@ -265,6 +271,7 @@ internal class GlassLensRenderer {
                 // 与背光侧峰值相等（背光侧是透明介质的内壁反射），瓣宽 pow 4.5（离轴 30°
                 // 剩一半、45° 归零）；迎光侧另加一层向内的柔和辉光——iOS 左上角是亮线 +
                 // 辉光，右下角只有亮线，两侧的边缘内侧都没有暗带
+                float specV = 0.0;
                 if (!interior) {
                 float facing = dot(n, -lightDir);
                 float lobeF = pow(max(facing, 0.0), 4.5);
@@ -279,9 +286,17 @@ internal class GlassLensRenderer {
                 float spec = (hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF)
                              * specStrength * (1.0 - 0.35 * press);
                 col += float3(spec);
+                specV = spec;
                 }
 
                 col = clamp(col, float3(0.0), float3(1.0));
+                if (clearInterior > 0.5) {
+                    // Only the rim is drawn: the refracted band fades out towards the inside, the rim light
+                    // stays at full strength (premultiplied: specular adds light where the glass is clear).
+                    float a = 1.0 - smoothstep(0.35, 1.0, t);
+                    float3 rgb = clamp((col - float3(specV)) * a + float3(specV), float3(0.0), float3(1.0));
+                    return half4(half3(rgb * cov), half(clamp(a + specV, 0.0, 1.0) * cov));
+                }
                 return half4(half3(col * cov), half(cov));
             }
         """
@@ -319,7 +334,9 @@ internal class GlassLensRenderer {
         val press: Float,
         val touchX: Float, val touchY: Float, val touchAmp: Float,
         /** < 1: the backdrop is recorded and blurred at this scale, then upscaled under the full-res lens. */
-        val backdropScale: Float = 1f
+        val backdropScale: Float = 1f,
+        /** Draw the rim band only; the interior stays transparent. */
+        val clearInterior: Boolean = false
     )
 
     private val renderNode = RenderNode("LiquidGlassLens")
@@ -685,6 +702,7 @@ internal class GlassLensRenderer {
         sh.setFloatUniform("press", p.press)
         sh.setFloatUniform("touchPos", p.touchX, p.touchY)
         sh.setFloatUniform("touchAmp", p.touchAmp)
+        sh.setFloatUniform("clearInterior", if (p.clearInterior) 1f else 0f)
 
         val lens = RenderEffect.createRuntimeShaderEffect(sh, "content")
         val scaled = p.backdropScale < 0.99f && p.backdropScale > 0f && !p.outward

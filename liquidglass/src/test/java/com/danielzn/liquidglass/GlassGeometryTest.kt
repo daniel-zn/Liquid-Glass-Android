@@ -90,4 +90,12 @@ class GlassGeometryTest {
         assertEquals(0.1f, GlassGeometry.lensParams(GlassLook(backdropScale = 0f), 400f, 400f, 0f, density).backdropScale, 0f)
         assertEquals(1f, GlassGeometry.lensParams(GlassLook(backdropScale = 3f), 400f, 400f, 0f, density).backdropScale, 0f)
     }
+
+    @Test
+    fun clearInteriorReachesTheShader() {
+        assertEquals(false, GlassGeometry.lensParams(GlassLook(), 400f, 400f, 0f, density).clearInterior)
+        val c = GlassGeometry.lensParams(GlassLook(clearInterior = true), 400f, 400f, 0f, density)
+        assertEquals(true, c.clearInterior)
+        assertTrue(c != GlassGeometry.lensParams(GlassLook(), 400f, 400f, 0f, density))
+    }
 }

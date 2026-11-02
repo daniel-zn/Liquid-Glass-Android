@@ -33,17 +33,23 @@ class GlassLook @JvmOverloads constructor(
      * upscales it under the full-resolution lens: much cheaper blur on weak GPUs, the rim stays
      * sharp. 1 = full resolution.
      */
-    @JvmField var backdropScale: Float = 1f
+    @JvmField var backdropScale: Float = 1f,
+    /**
+     * Clear interior: only the rim is drawn (refraction, dispersion, rim light, fading out inwards); the
+     * inside is transparent, so the real content behind shows at its own brightness and frame rate
+     * (e.g. a video on its own display plane). The backdrop then only matters for the rim band.
+     */
+    @JvmField var clearInterior: Boolean = false
 ) {
     fun copy(): GlassLook = GlassLook(
         blurRadius, bevel, refraction, falloff, dispersion, specular, saturation, tint, dim,
-        glassTint, lightX, lightY, backdropScale
+        glassTint, lightX, lightY, backdropScale, clearInterior
     )
 
     fun set(o: GlassLook) {
         blurRadius = o.blurRadius; bevel = o.bevel; refraction = o.refraction; falloff = o.falloff
         dispersion = o.dispersion; specular = o.specular; saturation = o.saturation; tint = o.tint
         dim = o.dim; glassTint = o.glassTint; lightX = o.lightX; lightY = o.lightY
-        backdropScale = o.backdropScale
+        backdropScale = o.backdropScale; clearInterior = o.clearInterior
     }
 }
