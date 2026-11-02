@@ -158,6 +158,12 @@ class GlassRimOverlay(
     @Volatile internal var firstFrameSeen = false
     fun resetFirstFrame() { firstFrameSeen = false }
 
+    /**
+     * Frozen: keeps its last picture, presents nothing new for video frames (only when its panes change).
+     * Every presented frame costs a composition; while another window's glass is up, this one can wait.
+     */
+    @Volatile var frozen = false
+
     /** Shows or hides the layer (hidden: its last picture never lingers when the video stops). */
     fun setShown(shown: Boolean) {
         wantShown = shown
@@ -353,7 +359,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         val v = o.version
         if (panes.isEmpty()) {
             if (t.drawnEmpty && t.drawnVersion == v) return false
-        } else if (!newFrame && t.drawnVersion == v) {
+        } else if ((!newFrame || o.frozen) && t.drawnVersion == v) {
             return false
         }
         val t0 = SystemClock.elapsedRealtimeNanos()
