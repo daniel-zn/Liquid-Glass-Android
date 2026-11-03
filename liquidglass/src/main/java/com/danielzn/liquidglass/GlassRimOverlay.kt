@@ -389,9 +389,11 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         }
         val panes = o.panes
         val v = o.version
+        // Waiting for a first picture (re-armed after a hand-back): always draw, so the callback comes.
+        val waiting = !o.firstFrameSeen
         if (panes.isEmpty()) {
-            if (t.drawnEmpty && t.drawnVersion == v) return false
-        } else if ((!newFrame || o.frozen) && t.drawnVersion == v) {
+            if (t.drawnEmpty && t.drawnVersion == v && !waiting) return false
+        } else if ((!newFrame || o.frozen) && t.drawnVersion == v && !waiting) {
             return false
         }
         val t0 = SystemClock.elapsedRealtimeNanos()
