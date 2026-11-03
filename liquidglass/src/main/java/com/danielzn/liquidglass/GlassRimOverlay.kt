@@ -406,16 +406,6 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         drawSlots(o)
         if (panes.isNotEmpty()) drawPanes(o, panes, oesTex, texMatrix)
-        if (o.frames % 20 == 0) {
-            // Diagnostics: what this layer holds where its first pane's rim is (or the middle).
-            val px = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
-            val f = panes.firstOrNull()
-            val sx = (f?.let { it.x + it.w / 2f } ?: o.surfaceW / 2f).toInt()
-            val sy = (f?.let { it.y + 2f } ?: o.surfaceH / 2f).toInt()
-            GLES20.glReadPixels(sx, o.surfaceH - 1 - sy, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, px)
-            Log.i(GlassRimOverlay.TAG, "${o.name}: ${panes.size} panes" + (f?.let { " first at ${it.x.toInt()},${it.y.toInt()} ${it.w.toInt()}x${it.h.toInt()} a=${it.alpha}" } ?: "") +
-                ", slots ${(0 until GlassRimOverlay.SLOTS).count { o.slotMoved(it) != null }}, layer ${o.surfaceW}x${o.surfaceH}, pixel at $sx,$sy = ${px.get(0).toInt() and 255},${px.get(1).toInt() and 255},${px.get(2).toInt() and 255},${px.get(3).toInt() and 255}, egl ${EGL14.eglGetError()}")
-        }
         EGL14.eglSwapBuffers(display, t.egl)
         t.drawnVersion = v
         t.drawnEmpty = panes.isEmpty()
