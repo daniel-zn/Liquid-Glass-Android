@@ -41,6 +41,32 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
     private var firstSeen = false
     fun resetFirstFrame() { firstSeen = false }
 
+    /**
+     * Staggered: a new picture redraws one glass view per display frame (the next on the next vsync), so each
+     * frame's damage is one small region (HWUI redraws a single damage rectangle: the dock and the top buttons
+     * together would span the screen).
+     */
+    var stagger = true
+    private var staggerNext = 0
+    private val staggerStep = object : Runnable {
+        override fun run() {
+            while (staggerNext < hosts.size) {
+                val h = hosts[staggerNext++]
+                if (!h.isShown) continue
+                h.invalidate()
+                if (staggerNext < hosts.size) h.postOnAnimation(this)
+                return
+            }
+        }
+    }
+
+    private fun invalidateStaggered() {
+        val first = hosts.firstOrNull { it.isShown } ?: return
+        first.removeCallbacks(staggerStep)
+        staggerNext = 0
+        staggerStep.run()
+    }
+
     /** Frozen: keeps the picture it has (another window's glass is up over this one). */
     var frozen = false
 
@@ -60,7 +86,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
         frames++
         GlassStats.rimFrames++
         version++
-        for (i in hosts.indices) if (hosts[i].isShown) hosts[i].invalidate()
+        if (stagger) invalidateStaggered() else for (i in hosts.indices) if (hosts[i].isShown) hosts[i].invalidate()
         if (!firstSeen) {
             firstSeen = true
             onFirstFrame?.run()
