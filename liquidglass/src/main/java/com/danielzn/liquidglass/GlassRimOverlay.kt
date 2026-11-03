@@ -45,7 +45,11 @@ class GlassRimOverlay(
     /** One pane as drawn: position and size in the layer's pixels, its lens, its opacity. */
     internal class Pane(val x: Float, val y: Float, val w: Float, val h: Float, val p: GlassLensRenderer.LensParams, val alpha: Float)
 
-    private class Entry(val key: Any, val host: WeakReference<View>, var pane: Pane)
+    private class Entry(val key: Any, val host: WeakReference<View>, var pane: Pane) {
+        var left = 0f        // the glass's bounds in its host
+        var top = 0f
+        var ownAlpha = 1f    // the drawable's own alpha
+    }
 
     private val entries = ArrayList<Entry>()
     @Volatile internal var panes: Array<Pane> = emptyArray(); private set
@@ -235,10 +239,15 @@ class GlassRimOverlay(
     // ---- panes (main thread) -----------------------------------------------------------------
 
     /** [key]'s glass on [host] is at x, y (layer pixels), w x h, with lens [p] and opacity [alpha]. */
-    internal fun update(key: Any, host: View, x: Float, y: Float, w: Float, h: Float, p: GlassLensRenderer.LensParams, alpha: Float) {
-        val pane = Pane(x, y, w, h, p, alpha)
-        val e = entries.firstOrNull { it.key === key }
-        if (e == null) entries.add(Entry(key, WeakReference(host), pane)) else e.pane = pane
+    internal fun update(key: Any, host: View, left: Float, top: Float, w: Float, h: Float, p: GlassLensRenderer.LensParams, ownAlpha: Float) {
+        var e = entries.firstOrNull { it.key === key }
+        if (e == null) {
+            e = Entry(key, WeakReference(host), Pane(0f, 0f, w, h, p, 0f))
+            entries.add(e)
+        } else e.pane = Pane(e.pane.x, e.pane.y, w, h, p, e.pane.alpha)
+        e.left = left
+        e.top = top
+        e.ownAlpha = ownAlpha
         observe(host)
         refresh()
     }
@@ -261,8 +270,31 @@ class GlassRimOverlay(
     /** Shown panes now (measuring). */
     fun paneCount(): Int = panes.size
 
-    /** Re-checks which panes are shown (every UI frame of the window, cheap: a short list). */
+    private val hostLoc = IntArray(2)
+
+    /** Where the glass is and how opaque, now: its host's place in the window and every ancestor's alpha. */
+    private fun follow(e: Entry, h: View): Boolean {
+        h.getLocationInWindow(hostLoc)
+        val x = hostLoc[0] + e.left - originX
+        val y = hostLoc[1] + e.top - originY
+        var a = e.ownAlpha
+        var v: View? = h
+        while (v != null) {
+            a *= v.alpha
+            v = v.parent as? View
+        }
+        val p = e.pane
+        if (x == p.x && y == p.y && a == p.alpha) return false
+        e.pane = Pane(x, y, p.w, p.h, p.p, a)
+        return true
+    }
+
+    /**
+     * Re-checks which panes are shown, where and how opaque (every UI frame of the window, cheap: a short
+     * list), so the layer follows fades, slides and scrolling frame by frame.
+     */
     fun refresh() {
+        for (e in entries) e.host.get()?.let { if (shown(e)) follow(e, it) }
         var n = 0
         for (e in entries) if (shown(e)) n++
         val next = arrayOfNulls<Pane>(n)

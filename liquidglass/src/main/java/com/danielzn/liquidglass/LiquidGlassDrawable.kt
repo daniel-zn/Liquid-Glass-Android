@@ -243,10 +243,8 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
     private fun reportToOverlay(h: View): Boolean {
         val o = backdropUnderlay as? GlassRimOverlay ?: return false
         val b = bounds
-        h.getLocationInWindow(windowLoc)
         val p = currentParams(b.width(), b.height(), h.resources.displayMetrics.density)
-        o.update(this, h, windowLoc[0] + b.left - o.originX, windowLoc[1] + b.top - o.originY,
-            b.width().toFloat(), b.height().toFloat(), p, alpha / 255f * h.alpha)
+        o.update(this, h, b.left.toFloat(), b.top.toFloat(), b.width().toFloat(), b.height().toFloat(), p, alpha / 255f)
         return true
     }
 
@@ -270,6 +268,13 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
             lastH = bounds.height()
             paramsDirty = true
         }
+    }
+
+    /** Hidden by its container (a StateListDrawable switching to the focused look): leave the overlay layer. */
+    override fun setVisible(visible: Boolean, restart: Boolean): Boolean {
+        val changed = super.setVisible(visible, restart)
+        if (!visible && Build.VERSION.SDK_INT >= 33) (backdropUnderlay as? GlassRimOverlay)?.remove(this)
+        return changed
     }
 
     override fun getOutline(outline: Outline) {
