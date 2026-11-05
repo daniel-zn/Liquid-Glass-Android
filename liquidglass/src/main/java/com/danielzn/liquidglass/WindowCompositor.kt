@@ -67,7 +67,7 @@ class WindowCompositor(private val window: Window, val overlay: GlassRimOverlay)
     @Volatile private var videoNew = false
     @Volatile private var haveUi = false
     /** A video picture is there to draw the rims from (false: the views draw their still glass themselves). */
-    @Volatile var videoLive = false
+    @Volatile var videoLive = false; private set
 
     private var w = 0
     private var h = 0
