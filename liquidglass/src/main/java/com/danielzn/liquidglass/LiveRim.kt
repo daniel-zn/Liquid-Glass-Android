@@ -184,6 +184,45 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
         return true
     }
 
+    /**
+     * Draws one pane's rim and veil at x, y (w x h, this canvas's and the window's coordinates: a [RimView]
+     * covering the window), with lens [p] and opacity [alpha]; false before the first picture.
+     */
+    internal fun drawAt(canvas: Canvas, x: Float, y: Float, w: Float, h: Float, p: GlassLensRenderer.LensParams, alpha: Float,
+                        shader: RuntimeShader, paint: Paint): Boolean {
+        val v = video ?: return false
+        shader.setFloatUniform("origin", x, y)
+        shader.setFloatUniform("local", x, y)
+        shader.setFloatUniform("size", w, h)
+        shader.setFloatUniform("shape", p.lens1CX, p.lens1CY, p.lens1HW, p.lens1HH)
+        shader.setFloatUniform("radii", p.radius1TL, p.radius1TR, p.radius1BR, p.radius1BL)
+        shader.setFloatUniform("bevel", p.bevel)
+        shader.setFloatUniform("refractPx", p.refract)
+        shader.setFloatUniform("falloff", p.falloff)
+        shader.setFloatUniform("refractDir", if (p.outward) 1f else -1f)
+        shader.setFloatUniform("dispersion", p.dispersion)
+        shader.setFloatUniform("lightDir", p.lightX, p.lightY)
+        shader.setFloatUniform("specStrength", p.spec)
+        shader.setFloatUniform("rimBandMax", p.rimBandMax)
+        shader.setFloatUniform("satFactor", p.saturation / 100f)
+        shader.setFloatUniform("dimAmount", p.dim)
+        shader.setFloatUniform("clearInterior", if (p.clearInterior) 1f else 0f)
+        shader.setFloatUniform("clearVeil", p.clearVeil)
+        shader.setFloatUniform("alpha", alpha)
+        shader.setFloatUniform("videoRect", videoX, videoY, videoW, videoH)
+        shader.setInputShader("video", v)
+        for (i in 0 until LAYERS) {
+            val l = layers[i]
+            val a = l?.let { lay -> lay.alphaOf?.let { if (it.isShown) it.alpha else 0f } ?: 1f } ?: 0f
+            shader.setInputShader("l$i", l?.shader ?: empty)
+            shader.setFloatUniform("l${i}Rect", l?.x ?: 0f, l?.y ?: 0f, l?.w ?: 0f, l?.h ?: 0f)
+            shader.setFloatUniform("l${i}A", a)
+        }
+        paint.shader = shader
+        canvas.drawRect(x, y, x + w, y + h, paint)
+        return true
+    }
+
     // ---- as an underlay ------------------------------------------------------------------------
 
     override fun drawUnderlay(canvas: Canvas) {}
