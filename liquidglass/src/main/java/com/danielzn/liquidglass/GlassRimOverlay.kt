@@ -239,9 +239,25 @@ class GlassRimOverlay(
         updateCrop()
     }
 
+    /**
+     * Draws into a surface it doesn't own (e.g. an ImageReader's, shown inside a window by [RimPictureView]):
+     * no layer of its own.
+     */
+    fun attachToSurface(s: Surface, w: Int, h: Int) {
+        detachSurface()
+        surfaceW = w
+        surfaceH = h
+        surface = s
+        changed()
+    }
+
     /** Removes the layer (its GL surface is dropped on the next render). */
     fun detachSurface() {
-        val sc = control ?: return
+        val sc = control
+        if (sc == null) {
+            if (surface != null) { surface = null; changed() }
+            return
+        }
         val s = surface
         surface = null
         control = null
