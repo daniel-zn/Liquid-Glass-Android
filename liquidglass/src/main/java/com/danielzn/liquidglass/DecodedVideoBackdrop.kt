@@ -221,7 +221,15 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     }
 
     /** Its state in one line (diagnostics). */
-    fun describe(): String = "playing=$playing file=${file?.name} gl=${glThread != null} picture=$haveTexture " +
+    /**
+     * The decoder gave no picture for [STALL_MS] (seen on a TV: started, fed, silent): it is released and a
+     * new one started at the clock. False: it is left alone (measuring the stall).
+     */
+    @Volatile var restartOnStall = true
+    /** Decoders restarted after a stall (diagnostics; a check fails on stalls without restarts). */
+    @Volatile var stalls = 0; private set
+
+    fun describe(): String = "playing=$playing file=${file?.name} gl=${glThread != null} picture=$haveTexture stalls=$stalls " +
         "readbacks=$frames sinkFrames=$sinkFrames overlays=${overlays.size} sinks=${sinks.size} duration=${durationMs}ms"
 
     /** Receives each picture as a GPU-backed bitmap (main thread), e.g. [LiveRim.setFrame]. */
@@ -473,31 +481,51 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
             seekToMs = position(SystemClock.uptimeMillis())
             var lastShownMs = 0L
             var lastCatchUpMs = 0L
+            var lastOutMs = SystemClock.uptimeMillis()
+            var warned = false
             while (playing) {
+                val nowMs = SystemClock.uptimeMillis()
+                if (nowMs - lastOutMs > STALL_MS && !warned) {
+                    stalls++
+                    if (restartOnStall) {
+                        Log.w(TAG, "decoder stall: no picture for ${nowMs - lastOutMs} ms, restarting it")
+                        try { codec?.stop() } catch (_: Exception) {}
+                        codec?.release()
+                        codec = createDecoder(mime).also { it.configure(fmt, surface, null, 0); it.start() }
+                        seekToMs = position(nowMs)
+                        inputDone = false
+                        lastOutMs = nowMs
+                    } else {
+                        Log.w(TAG, "decoder stall: no picture for ${nowMs - lastOutMs} ms (left alone)")
+                        warned = true
+                    }
+                }
+                val c = codec!!
                 val seek = seekToMs
                 if (seek >= 0) {
                     seekToMs = -1
                     ex.seekTo(seek * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                    codec.flush()
+                    c.flush()
                     inputDone = false
                 }
                 if (!inputDone) {
-                    val ii = codec.dequeueInputBuffer(5_000)
+                    val ii = c.dequeueInputBuffer(5_000)
                     if (ii >= 0) {
-                        val buf = codec.getInputBuffer(ii)!!
+                        val buf = c.getInputBuffer(ii)!!
                         val size = ex.readSampleData(buf, 0)
                         if (size < 0) {
                             // Loop: back to the start; the clock wraps with durationMs.
                             ex.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                            codec.queueInputBuffer(ii, 0, 0, 0, 0)
+                            c.queueInputBuffer(ii, 0, 0, 0, 0)
                         } else {
-                            codec.queueInputBuffer(ii, 0, size, ex.sampleTime, 0)
+                            c.queueInputBuffer(ii, 0, size, ex.sampleTime, 0)
                             ex.advance()
                         }
                     }
                 }
-                val oi = codec.dequeueOutputBuffer(info, 5_000)
+                val oi = c.dequeueOutputBuffer(info, 5_000)
                 if (oi >= 0) {
+                    lastOutMs = SystemClock.uptimeMillis()
                     val pts = info.presentationTimeUs / 1000
                     if (outputs++ == 0) Log.i(TAG, "first decoded frame at $pts ms (clock ${position(SystemClock.uptimeMillis())} ms)")
                     // Show it when the clock reaches it; frames already more than 100 ms late are dropped.
@@ -519,7 +547,7 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
                     }
                     val show = late in -50..100 || (late > 100 && wall - lastShownMs > 250)
                     if (show) lastShownMs = wall
-                    codec.releaseOutputBuffer(oi, show)
+                    c.releaseOutputBuffer(oi, show)
                 }
             }
         } catch (e: Exception) {
@@ -546,5 +574,6 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
 
     private companion object {
         const val TAG = "DecodedVideoBackdrop"
+        const val STALL_MS = 2500L
     }
 }

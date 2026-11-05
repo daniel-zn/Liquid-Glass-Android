@@ -93,8 +93,11 @@ class GlassRimOverlay(
     /**
      * Moves [view]'s background into slot [slot] (0-2): drawn here ([pass] true) and refracted by the
      * glass; the view itself draws nothing until [restoreMoved] (its alpha and visibility still count).
+     * [take] false: the view keeps drawing its background (in the window, under this layer's pictures) and
+     * the glass only refracts it (use with [pass] false).
      */
-    fun move(slot: Int, view: View, pass: Boolean = true) {
+    @JvmOverloads
+    fun move(slot: Int, view: View, pass: Boolean = true, take: Boolean = true) {
         val bg = view.background
         val color = (bg as? android.graphics.drawable.ColorDrawable)?.color ?: 0
         var bmp: android.graphics.Bitmap? = null
@@ -113,7 +116,7 @@ class GlassRimOverlay(
         if (bg == null) return
         restoreSlot(slot)
         slots[slot] = Slot(Moved(view, bmp, color, bg), pass, true)
-        view.background = null
+        if (take) view.background = null
         observe(view)
         refresh()
     }
