@@ -1,6 +1,7 @@
 package com.danielzn.liquidglass
 
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
@@ -168,6 +169,15 @@ class GlassRimOverlay(
      */
     @Volatile var frozen = false
 
+    /**
+     * Minimum time between presents that are only a new video frame. 0 presents every decoded frame
+     * (home, over the moving picture). A window whose inside is a hole can wait: the real video plane
+     * is already live, and presenting the whole layer again only to nudge a thin bezel is the hitch.
+     * A pane move still presents immediately.
+     */
+    @Volatile var videoIntervalMs = 0
+    @Volatile var lastPresentMs = 0L
+
     /** Shows or hides the layer (hidden: its last picture never lingers when the video stops). */
     fun setShown(shown: Boolean) {
         wantShown = shown
@@ -204,6 +214,7 @@ class GlassRimOverlay(
         surfaceH = h
         surface = Surface(sc)
         changed()
+        updateCrop()
     }
 
     /**
@@ -222,6 +233,7 @@ class GlassRimOverlay(
         surfaceH = h
         surface = Surface(sc)
         changed()
+        updateCrop()
     }
 
     /** Removes the layer (its GL surface is dropped on the next render). */
@@ -230,6 +242,7 @@ class GlassRimOverlay(
         val s = surface
         surface = null
         control = null
+        cropL = Int.MIN_VALUE
         changed()
         SurfaceControl.Transaction().reparent(sc, null).apply()
         s?.release()
@@ -307,6 +320,42 @@ class GlassRimOverlay(
             panes = arr
             changed()
         }
+        updateCrop()
+    }
+
+    private var cropL = Int.MIN_VALUE
+    private var cropT = 0
+    private var cropR = 0
+    private var cropB = 0
+
+    /**
+     * The layer is only as big as its glass and its scrim. A full-screen blend of a transparent
+     * buffer is the expensive part; a menu should not pay for the whole screen.
+     */
+    private fun updateCrop() {
+        val sc = control ?: return
+        val sw = surfaceW
+        val sh = surfaceH
+        if (sw <= 0 || sh <= 0) return
+        val rects = ArrayList<FloatArray>(panes.size + SLOTS)
+        for (pane in panes) {
+            if (pane.alpha <= 0.001f) continue
+            rects.add(floatArrayOf(pane.x, pane.y, pane.w, pane.h))
+        }
+        for (i in 0 until SLOTS) {
+            val sl = slots[i] ?: continue
+            if (!sl.pass) continue
+            val m = sl.moved
+            if (m.alpha <= 0.001f) continue
+            rects.add(floatArrayOf(m.x, m.y, m.w, m.h))
+        }
+        val crop = GlassGeometry.layerCrop(sw, sh, rects) ?: return
+        if (crop[0] == cropL && crop[1] == cropT && crop[2] == cropR && crop[3] == cropB) return
+        cropL = crop[0]
+        cropT = crop[1]
+        cropR = crop[2]
+        cropB = crop[3]
+        SurfaceControl.Transaction().setCrop(sc, Rect(cropL, cropT, cropR, cropB)).apply()
     }
 
     private fun shown(e: Entry): Boolean {
@@ -393,7 +442,9 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         val waiting = !o.firstFrameSeen
         if (panes.isEmpty()) {
             if (t.drawnEmpty && t.drawnVersion == v && !waiting) return false
-        } else if ((!newFrame || o.frozen) && t.drawnVersion == v && !waiting) {
+        } else if ((!newFrame || o.frozen || (newFrame && o.videoIntervalMs > 0 &&
+                SystemClock.elapsedRealtime() - o.lastPresentMs < o.videoIntervalMs)) &&
+            t.drawnVersion == v && !waiting) {
             return false
         }
         val t0 = SystemClock.elapsedRealtimeNanos()
@@ -409,6 +460,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         drawSlots(o)
         if (panes.isNotEmpty()) drawPanes(o, panes, oesTex, texMatrix)
         EGL14.eglSwapBuffers(display, t.egl)
+        o.lastPresentMs = SystemClock.elapsedRealtime()
         t.drawnVersion = v
         t.drawnEmpty = panes.isEmpty()
         val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6f
@@ -700,10 +752,11 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             }
             float lensSDF(vec2 p) { return sdBox4(p - uShape.xy, uShape.zw, uRadii); }
 
-            // GlassGeometry.snellShift. Slope capped at 4 so the bend covers the lip.
+            // GlassGeometry.snellShift. Fifth-power bezel, slope capped at 1.15.
             float snellShift(float t, float thick, float bev) {
                 float u = 1.0 - clamp(t, 0.0, 1.0);
-                float slope = min(u * u * 4.0 * (thick / max(bev, 1.0)), 4.0);
+                float u2 = u * u;
+                float slope = min(u2 * u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);
@@ -717,7 +770,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float cov = clamp(0.5 - d / 1.5, 0.0, 1.0) * uAlpha;
                 if (cov <= 0.004) { gl_FragColor = vec4(0.0); return; }
                 float bandW = clamp(uBevel * 0.3, 2.0, uBandMax);
-                float lip = uConvex > 0.5 ? uBevel * 0.82 : uBevel;
+                float lip = uConvex > 0.5 ? uBevel * 0.55 : uBevel;
                 bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
                 if (interior && uClear > 0.5) {
                     float v = uVeil * cov;
@@ -754,16 +807,18 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 }
                 col *= 1.0 - uDim;
                 if (uConvex > 0.5) col *= 1.0 - 0.14 * smoothstep(0.12, 0.55, slope);
-                float facing = dot(n, -uLight);
+                // uLight points at the light, so (0, -1) lights the top edge.
+                float facing = dot(n, uLight);
                 float lobeF = pow(max(facing, 0.0), 4.5);
                 float lobeB = pow(max(-facing, 0.0), 4.5);
                 float glowIn = clamp((-d - 1.0) / 2.0, 0.0, 1.0);
-                float glow = glowIn * pow(clamp(1.0 - (-d - 3.0) / bandW, 0.0, 1.0), 1.5) * cov;
-                float hair = clamp(1.0 - abs(d + 1.0) / 2.0, 0.0, 1.0) * cov;
-                float spec = (hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF) * uSpec;
+                float glow = glowIn * pow(clamp(1.0 - (-d - 2.0) / bandW, 0.0, 1.0), 1.5) * cov;
+                float hair = clamp(1.0 - abs(d + 1.0) / 1.15, 0.0, 1.0) * cov;
+                float reflect = 0.65 + 0.55 * lum;
+                float spec = (hair * (0.42 * lobeF + 0.16 * lobeB) + glow * 0.08 * lobeF) * reflect * uSpec;
                 col = clamp(col + vec3(spec), 0.0, 1.0);
                 if (uClear > 0.5) {
-                    float a = uConvex > 0.5 ? smoothstep(0.03, 0.16, slope) : (1.0 - smoothstep(0.35, 1.0, t));
+                    float a = uConvex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
                     float v = uVeil * (1.0 - a);
                     vec3 rgb = clamp((col - vec3(spec)) * a + vec3(0.5 * v) + vec3(spec), 0.0, 1.0);
                     gl_FragColor = vec4(rgb * cov, clamp(a + v + spec, 0.0, 1.0) * cov);

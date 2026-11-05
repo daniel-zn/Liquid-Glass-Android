@@ -244,10 +244,11 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 float2 q = abs(p) - b + rx;
                 return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - rx;
             }
-            // GlassGeometry.snellShift. Slope capped at 4 so the bend covers the lip.
+            // GlassGeometry.snellShift. Fifth-power bezel, slope capped at 1.15.
             float snellShift(float t, float thick, float bev) {
                 float u = 1.0 - clamp(t, 0.0, 1.0);
-                float slope = min(u * u * 4.0 * (thick / max(bev, 1.0)), 4.0);
+                float u2 = u * u;
+                float slope = min(u2 * u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);
@@ -261,7 +262,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 float cov = clamp(0.5 - d / 1.5, 0.0, 1.0) * alpha;
                 if (cov <= 0.004) return half4(0.0);
                 float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
-                float lip = convex > 0.5 ? bevel * 0.82 : bevel;
+                float lip = convex > 0.5 ? bevel * 0.55 : bevel;
                 bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
                 if (interior && clearInterior > 0.5) {
                     float v = clearVeil * cov;
@@ -298,16 +299,18 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 }
                 col *= half(1.0 - dimAmount);
                 if (convex > 0.5) col *= half(1.0 - 0.14 * smoothstep(0.12, 0.55, slope));
-                float facing = dot(n, -lightDir);
+                // lightDir points at the light, so (0, -1) lights the top edge.
+                float facing = dot(n, lightDir);
                 float lobeF = pow(max(facing, 0.0), 4.5);
                 float lobeB = pow(max(-facing, 0.0), 4.5);
                 float glowIn = clamp((-d - 1.0) / 2.0, 0.0, 1.0);
-                float glow = glowIn * pow(clamp(1.0 - (-d - 3.0) / bandW, 0.0, 1.0), 1.5) * cov;
-                float hair = clamp(1.0 - abs(d + 1.0) / 2.0, 0.0, 1.0) * cov;
-                float spec = (hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF) * specStrength;
+                float glow = glowIn * pow(clamp(1.0 - (-d - 2.0) / bandW, 0.0, 1.0), 1.5) * cov;
+                float hair = clamp(1.0 - abs(d + 1.0) / 1.15, 0.0, 1.0) * cov;
+                float reflect = 0.65 + 0.55 * lum;
+                float spec = (hair * (0.42 * lobeF + 0.16 * lobeB) + glow * 0.08 * lobeF) * reflect * specStrength;
                 float3 c3 = clamp(float3(col) + float3(spec), 0.0, 1.0);
                 if (clearInterior > 0.5) {
-                    float a = convex > 0.5 ? smoothstep(0.03, 0.16, slope) : (1.0 - smoothstep(0.35, 1.0, t));
+                    float a = convex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
                     float v = clearVeil * (1.0 - a);
                     float3 rgb = clamp((c3 - float3(spec)) * a + float3(0.5 * v) + float3(spec), 0.0, 1.0);
                     return half4(half3(rgb * cov), half(clamp(a + v + spec, 0.0, 1.0) * cov));

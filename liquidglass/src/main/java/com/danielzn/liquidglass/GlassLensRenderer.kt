@@ -102,10 +102,11 @@ internal class GlassLensRenderer {
             }
 
             // 斜面 / 法线 / 高光用透镜形状（平边已延伸出去，不产生边缘）
-            // GlassGeometry.snellShift. Slope capped at 4 so the bend covers the lip.
+            // GlassGeometry.snellShift. Fifth-power bezel, slope capped at 1.15.
             float snellShift(float t, float thick, float bev) {
                 float u = 1.0 - clamp(t, 0.0, 1.0);
-                float slope = min(u * u * 4.0 * (thick / max(bev, 1.0)), 4.0);
+                float u2 = u * u;
+                float slope = min(u2 * u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);
@@ -143,7 +144,7 @@ internal class GlassLensRenderer {
                 // zero, so one sample is the whole result (most of a panel's pixels; no normal, no pow).
                 float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
                 // Past the lip the bend is gone, so the sample is the pixel itself.
-                float lip = convex > 0.5 ? bevel * 0.82 : bevel;
+                float lip = convex > 0.5 ? bevel * 0.55 : bevel;
                 bool interior = (-d > max(lip, 3.0 + bandW) + 1.0) && touchAmp <= 0.001;
                 // Clear interior: nothing to draw there, the real content behind shows through (a video on
                 // its own plane keeps its own brightness, colour processing and frame rate).
@@ -291,26 +292,22 @@ internal class GlassLensRenderer {
                     col = mix(col, clamp(absorbed + scattered, float3(0.0), float3(1.0)), glassTint.a);
                 }
 
-                // 光照：同一法线场驱动。整圈亮边的明暗只由 dot(N, -L) 决定，没有与方向
-                // 无关的常亮项——侧向（法线垂直于光线处）归零，不会留下一圈固定描边。
-                // 两道对称的角度瓣（沿 iOS 26 控制中心截图里的控件一圈逐角量得）：迎光侧
-                // 与背光侧峰值相等（背光侧是透明介质的内壁反射），瓣宽 pow 4.5（离轴 30°
-                // 剩一半、45° 归零）；迎光侧另加一层向内的柔和辉光——iOS 左上角是亮线 +
-                // 辉光，右下角只有亮线，两侧的边缘内侧都没有暗带
+                // Light from above: the lobes die toward the corners, so the glint stays on the
+                // top and bottom edges. The top is the lit edge; the bottom is a quieter reflection.
                 float specV = 0.0;
                 if (!interior) {
-                float facing = dot(n, -lightDir);
+                float facing = dot(n, lightDir);
                 float lobeF = pow(max(facing, 0.0), 4.5);
                 float lobeB = pow(max(-facing, 0.0), 4.5);
 
-                // 贴边亮线（中心在边内 1px，半宽 2px）+ 迎光侧辉光：从亮线内侧（边内 3px）起
-                // 向内 1.5 次幂衰减，宽度与斜面弱相关、上限默认 6px、小控件按短边收。
-                // 辉光不叠在亮线上，两侧亮线峰值相等
+                // Hairline (about 1 px), plus a short glow inward from the lit edge. Wider than
+                // that, and stacked edges read as stripes. Brighter where the picture is bright.
                 float glowIn = clamp((-d - 1.0) / 2.0, 0.0, 1.0);
-                float glow = glowIn * pow(clamp(1.0 - (-d - 3.0) / bandW, 0.0, 1.0), 1.5) * cov;
-                float hair = clamp(1.0 - abs(d + 1.0) / 2.0, 0.0, 1.0) * cov;
-                float spec = (hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF)
-                             * specStrength * (1.0 - 0.35 * press);
+                float glow = glowIn * pow(clamp(1.0 - (-d - 2.0) / bandW, 0.0, 1.0), 1.5) * cov;
+                float hair = clamp(1.0 - abs(d + 1.0) / 1.15, 0.0, 1.0) * cov;
+                float reflect = 0.65 + 0.55 * lum;
+                float spec = (hair * (0.42 * lobeF + 0.16 * lobeB) + glow * 0.08 * lobeF)
+                             * reflect * specStrength * (1.0 - 0.35 * press);
                 col += float3(spec);
                 specV = spec;
                 }
@@ -319,9 +316,9 @@ internal class GlassLensRenderer {
                 if (clearInterior > 0.5) {
                     // Only the rim is drawn: the refracted band fades out towards the inside, the rim light
                     // stays at full strength (premultiplied: specular adds light where the glass is clear).
-                    // Convex: opaque where the picture actually moves, so the bend reads as glass
-                    // and not as a ghost of the straight picture behind it. Legacy: fade across the band.
-                    float a = convex > 0.5 ? smoothstep(0.03, 0.16, slope) : (1.0 - smoothstep(0.35, 1.0, t));
+                    // The bend stays opaque. Fade only across the last couple of pixels of offset:
+                    // blending a larger shift with the sharp picture under the hole draws a second copy.
+                    float a = convex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
                     // Where the rim fades out, the veil takes over (the same faint grey as the inside).
                     float v = clearVeil * (1.0 - a);
                     float3 rgb = clamp((col - float3(specV)) * a + float3(0.5 * v) + float3(specV), float3(0.0), float3(1.0));

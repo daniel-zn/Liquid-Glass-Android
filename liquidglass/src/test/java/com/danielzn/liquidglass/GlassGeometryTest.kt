@@ -1,6 +1,7 @@
 package com.danielzn.liquidglass
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -73,22 +74,54 @@ class GlassGeometryTest {
     }
 
     @Test
-    fun convexLipSamplesOutwardAcrossAWideBand() {
+    fun convexLipIsANarrowBezel() {
         val look = GlassLook(bevel = 64f, refraction = 48f, convex = true)
-        val p = GlassGeometry.lensParams(look, 400f, 170f, 85f, density)
-        // On a 170 px side the 0.46 cap is 78 px, so a 64 px bevel stands.
+        val p = GlassGeometry.lensParams(look, 400f, 400f, 40f, density)
         assertEquals(64f, p.bevel, 0.01f)
         assertEquals(48f, p.refract, 0.01f)
         assertTrue(p.convex)
         assertTrue(p.outward)
         val edge = GlassGeometry.snellShift(0f, 48f, 64f)
         val mid = GlassGeometry.snellShift(0.35f, 48f, 64f)
-        // The bend is still a large fraction of the edge a third of the way in.
-        assertTrue(edge > 24f)
-        assertTrue(mid > edge * 0.4f)
-        assertTrue(mid < edge)
+        val inner = GlassGeometry.snellShift(0.55f, 48f, 64f)
+        // A visible bend at the outer edge, not a hairline and not a second copy of a glyph.
+        assertTrue(edge > 10f)
+        assertTrue(edge < 22f)
+        assertTrue(mid < edge * 0.25f)
+        assertTrue(inner < 1.5f)
         assertEquals(0f, GlassGeometry.snellShift(1f, 48f, 64f), 0.05f)
         assertEquals(0f, GlassGeometry.snellShift(0f, 0f, 64f), 0f)
+    }
+
+    @Test
+    fun aPanelSizedLipBendsAndThenMeetsTheHole() {
+        // The thickness a panel actually uses: an edge you can see, gone before the clear inside,
+        // so the lip cannot draw a second copy of a glyph.
+        val edge = GlassGeometry.snellShift(0f, 24f, 40f)
+        val mid = GlassGeometry.snellShift(0.3f, 24f, 40f)
+        val inner = GlassGeometry.snellShift(0.5f, 24f, 40f)
+        assertTrue(edge > 6f)
+        assertTrue(edge < 11f)
+        assertTrue(mid < 2f)
+        assertTrue(inner < 0.5f)
+    }
+
+    @Test
+    fun layerCropHugsThePanes() {
+        val full = GlassGeometry.layerCrop(1920, 1080, listOf(floatArrayOf(0f, 0f, 1920f, 1080f)))
+        assertEquals(0, full!![0])
+        assertEquals(0, full[1])
+        assertEquals(1920, full[2])
+        assertEquals(1080, full[3])
+        val chip = GlassGeometry.layerCrop(1920, 1080, listOf(floatArrayOf(1400f, 120f, 200f, 80f)))
+        assertEquals(1344, chip!![0])
+        assertEquals(64, chip[1])
+        assertEquals(1664, chip[2])
+        assertEquals(256, chip[3])
+        val dock = GlassGeometry.layerCrop(1920, 1080, listOf(floatArrayOf(80f, 860f, 1760f, 180f)))
+        assertTrue(dock!![1] > 600)
+        assertEquals(1080, dock[3])
+        assertNull(GlassGeometry.layerCrop(1920, 1080, emptyList()))
     }
 
     @Test
