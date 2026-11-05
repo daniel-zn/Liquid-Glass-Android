@@ -63,6 +63,10 @@ internal object SharedBackdrop {
         val uv = underlay?.underlayVersion ?: 0
         if (e.sig == sig && e.underlayV == uv && e.forceV == forceV && e.anchorX == ax && e.anchorY == ay &&
             e.w == source.width && e.h == source.height && e.scale == scale) return e.node
+        // The panel is sliding or fading in (or out): keep the last recording until it settles, instead of
+        // recording it again on every frame of the motion. Its controls refract a picture a few pixels off.
+        val moving = anchor.translationX != 0f || anchor.translationY != 0f || anchor.alpha < 1f
+        if (moving && e.w > 0 && e.w == source.width && e.h == source.height && e.scale == scale) return e.node
         e.sig = sig; e.underlayV = uv; e.forceV = forceV; e.anchorX = ax; e.anchorY = ay
         e.w = source.width; e.h = source.height; e.scale = scale
         val nw = ceil(source.width * scale).toInt().coerceAtLeast(1)
