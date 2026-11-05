@@ -174,7 +174,9 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     /** Stops decoding and frees the decoder and GL (the last picture stays drawable). */
     fun close() {
         playing = false
-        decodeThread?.join(1000)
+        // The old decoder has to be gone before a new one starts (a new one right behind it gave no
+        // pictures at times, until restarted).
+        decodeThread?.join(3000)
         decodeThread = null
         val h = gl
         val t = glThread
@@ -506,6 +508,10 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
                         seekToMs = position(nowMs)
                         inputDone = false
                         lastOutMs = nowMs
+                        // Every overlay waiting on a picture (another window's glass that opened meanwhile)
+                        // takes the next one as a first picture again, and draws as soon as it arrives.
+                        lastTakenMs = 0L
+                        gl?.post(redrawOverlays)
                     } else {
                         Log.w(TAG, "decoder stall: no picture for ${nowMs - lastOutMs} ms (left alone)")
                         warned = true
