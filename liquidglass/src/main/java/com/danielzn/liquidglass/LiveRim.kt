@@ -168,6 +168,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
         shader.setFloatUniform("dimAmount", p.dim)
         shader.setFloatUniform("clearInterior", if (p.clearInterior) 1f else 0f)
         shader.setFloatUniform("clearVeil", p.clearVeil)
+        shader.setFloatUniform("convex", if (p.convex) 1f else 0f)
         shader.setFloatUniform("alpha", alpha)
         shader.setFloatUniform("videoRect", videoX, videoY, videoW, videoH)
         shader.setInputShader("video", v)
@@ -223,6 +224,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
             uniform float bevel; uniform float refractPx; uniform float falloff; uniform float refractDir;
             uniform float dispersion; uniform float2 lightDir; uniform float specStrength; uniform float rimBandMax;
             uniform float satFactor; uniform float dimAmount; uniform float clearInterior; uniform float clearVeil;
+            uniform float convex;
             uniform float alpha;
 
             bool inside(float2 s, float4 r) { return s.x >= r.x && s.y >= r.y && s.x < r.x + r.z && s.y < r.y + r.w; }
@@ -242,6 +244,16 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 float2 q = abs(p) - b + rx;
                 return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - rx;
             }
+            // GlassGeometry.snellShift. Slope clamped at 64 so the outer pixel stays finite.
+            float snellShift(float t, float thick, float bev) {
+                float v = clamp(1.0 - clamp(t, 0.0, 1.0), 0.004, 1.0);
+                float base = max(1.0 - v * v * v * v, 0.0001);
+                float dhdu = (v * v * v) / pow(base, 0.75);
+                float slope = min(dhdu * (thick / max(bev, 1.0)), 64.0);
+                float th1 = atan(slope);
+                float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
+                return thick * tan(th1 - th2);
+            }
             float lensSDF(float2 p) { return sdBox4(p - shape.xy, shape.zw, radii); }
 
             half4 main(float2 coord) {
@@ -251,7 +263,8 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 float cov = clamp(0.5 - d / 1.5, 0.0, 1.0) * alpha;
                 if (cov <= 0.004) return half4(0.0);
                 float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
-                bool interior = -d > max(bevel, 3.0 + bandW) + 1.0;
+                float lip = convex > 0.5 ? bevel * 0.55 : bevel;
+                bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
                 if (interior && clearInterior > 0.5) {
                     float v = clearVeil * cov;
                     return half4(half3(0.5 * v), half(v));
@@ -262,13 +275,18 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 n = nl > 0.0001 ? n / nl : float2(0.0, -1.0);
                 float t = clamp(-d / max(bevel, 1.0), 0.0, 1.0);
                 float slope;
-                if (interior) slope = 0.0;
-                else if (falloff > 0.001) {
+                float shift;
+                if (interior) { slope = 0.0; shift = 0.0; }
+                else if (convex > 0.5) {
+                    shift = snellShift(t, refractPx, bevel);
+                    slope = shift / max(refractPx, 1.0);
+                } else if (falloff > 0.001) {
                     float gB = pow(5.0, -falloff);
                     slope = (pow(1.0 + 4.0 * t, -falloff) - gB) / (1.0 - gB);
-                } else slope = (1.0 - t) * (1.0 - t);
+                    shift = refractDir * slope * refractPx;
+                } else { slope = (1.0 - t) * (1.0 - t); shift = refractDir * slope * refractPx; }
                 float2 s = origin + p;
-                float2 off = n * (refractDir * slope * refractPx);
+                float2 off = n * shift;
                 half3 col = half3(behind(s + off * (1.0 - dispersion * slope)).r,
                                   behind(s + off).g,
                                   behind(s + off * (1.0 + dispersion * slope)).b);
@@ -281,6 +299,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                     col = half3(clamp(mix(float3(lum), float3(col), 1.0 + (satFactor - 1.0) * mix(0.3, 1.0, room * hl)), 0.0, 1.0));
                 }
                 col *= half(1.0 - dimAmount);
+                if (convex > 0.5) col *= half(1.0 - 0.14 * smoothstep(0.12, 0.55, slope));
                 float facing = dot(n, -lightDir);
                 float lobeF = pow(max(facing, 0.0), 4.5);
                 float lobeB = pow(max(-facing, 0.0), 4.5);
@@ -290,7 +309,7 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 float spec = (hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF) * specStrength;
                 float3 c3 = clamp(float3(col) + float3(spec), 0.0, 1.0);
                 if (clearInterior > 0.5) {
-                    float a = 1.0 - smoothstep(0.35, 1.0, t);
+                    float a = convex > 0.5 ? smoothstep(0.03, 0.16, slope) : (1.0 - smoothstep(0.35, 1.0, t));
                     float v = clearVeil * (1.0 - a);
                     float3 rgb = clamp((c3 - float3(spec)) * a + float3(0.5 * v) + float3(spec), 0.0, 1.0);
                     return half4(half3(rgb * cov), half(clamp(a + v + spec, 0.0, 1.0) * cov));

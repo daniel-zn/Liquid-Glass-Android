@@ -9,7 +9,10 @@ class GlassLook @JvmOverloads constructor(
     @JvmField var blurRadius: Float = 24f,
     /** Width of the bevel band at the rim (px). */
     @JvmField var bevel: Float = 24f,
-    /** How far the rim bends the backdrop (px, sampled inward). */
+    /**
+     * How far the rim bends the backdrop, in px. Sampled inward, unless [convex]: then this is the
+     * lip's thickness (how far the edge reaches out for the picture).
+     */
     @JvmField var refraction: Float = 40f,
     /** Refraction profile: > 0 inverse-power falloff (bend piles up at the rim), 0 = square bevel. */
     @JvmField var falloff: Float = 2f,
@@ -48,11 +51,19 @@ class GlassLook @JvmOverloads constructor(
      * With [clearInterior]: a faint neutral grey over the transparent inside (its opacity, 0-0.5; e.g.
      * 0.07): what's behind is lifted and compressed a little toward mid-grey, no colour, no blur.
      */
-    @JvmField var clearVeil: Float = 0f
+    @JvmField var clearVeil: Float = 0f,
+    /**
+     * Convex lip. The rim is a squircle of glass: Snell's law at index 1.5, sampling **outward**, so
+     * what sits just outside the shape bends in along the edge and the bend dies out before the
+     * inside (which can stay clear, [clearInterior]). [refraction] is the lip's thickness and [bevel]
+     * is how far inward it extends. Off: the older inverse-power profile, which samples inward and
+     * packs the whole bend into a thin ring.
+     */
+    @JvmField var convex: Boolean = false
 ) {
     fun copy(): GlassLook = GlassLook(
         blurRadius, bevel, refraction, falloff, dispersion, specular, saturation, tint, dim,
-        glassTint, lightX, lightY, backdropScale, clearInterior, clearVeil
+        glassTint, lightX, lightY, backdropScale, clearInterior, clearVeil, convex
     )
 
     fun set(o: GlassLook) {
@@ -60,5 +71,6 @@ class GlassLook @JvmOverloads constructor(
         dispersion = o.dispersion; specular = o.specular; saturation = o.saturation; tint = o.tint
         dim = o.dim; glassTint = o.glassTint; lightX = o.lightX; lightY = o.lightY
         backdropScale = o.backdropScale; clearInterior = o.clearInterior; clearVeil = o.clearVeil
+        convex = o.convex
     }
 }

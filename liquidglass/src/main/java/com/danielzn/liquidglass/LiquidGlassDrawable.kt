@@ -222,7 +222,9 @@ open class LiquidGlassDrawable @JvmOverloads constructor(
         if (!renderer.isAvailable) return false
         val b = bounds
         val p = currentParams(b.width(), b.height(), h.resources.displayMetrics.density)
-        return renderer.draw(canvas, h, this, b.left, b.top, b.width(), b.height(), p, GlassGeometry.lensMargin(p.blurRadius))
+        // An outward lip samples past the shape by about its thickness; the recording has to include that.
+        val reach = if (p.outward) p.refract * 1.2f else 0f
+        return renderer.draw(canvas, h, this, b.left, b.top, b.width(), b.height(), p, GlassGeometry.lensMargin(p.blurRadius, reach))
     }
 
     private val windowLoc = IntArray(2)

@@ -73,6 +73,30 @@ class GlassGeometryTest {
     }
 
     @Test
+    fun convexLipSamplesOutwardAcrossAWideBand() {
+        val look = GlassLook(bevel = 64f, refraction = 48f, convex = true)
+        val p = GlassGeometry.lensParams(look, 400f, 170f, 85f, density)
+        // On a 170 px side the 0.46 cap is 78 px, so a 64 px bevel stands.
+        assertEquals(64f, p.bevel, 0.01f)
+        assertEquals(48f, p.refract, 0.01f)
+        assertTrue(p.convex)
+        assertTrue(p.outward)
+        val edge = GlassGeometry.snellShift(0f, 48f, 64f)
+        val inner = GlassGeometry.snellShift(0.35f, 48f, 64f)
+        assertTrue(edge > 40f)
+        assertTrue(inner < edge / 3f)
+        assertEquals(0f, GlassGeometry.snellShift(1f, 48f, 64f), 0.05f)
+        assertEquals(0f, GlassGeometry.snellShift(0f, 0f, 64f), 0f)
+    }
+
+    @Test
+    fun marginCoversAnOutwardLip() {
+        assertEquals(32, GlassGeometry.lensMargin(0f, 0f))
+        assertEquals(96, GlassGeometry.lensMargin(0f, 80f))
+        assertEquals(80, GlassGeometry.lensMargin(25f, 0f))
+    }
+
+    @Test
     fun copyDelayFollowsTheFrameRate() {
         assertEquals(100L, GlassGeometry.nextCopyDelay(10f, 1000L, 1000L))
         assertEquals(40L, GlassGeometry.nextCopyDelay(10f, 1000L, 1060L))

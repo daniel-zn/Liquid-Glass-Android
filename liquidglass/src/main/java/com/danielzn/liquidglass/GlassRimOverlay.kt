@@ -578,6 +578,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             GLES20.glUniform1f(u("uDim"), p.dim)
             GLES20.glUniform1f(u("uClear"), if (p.clearInterior) 1f else 0f)
             GLES20.glUniform1f(u("uVeil"), p.clearVeil)
+            GLES20.glUniform1f(u("uConvex"), if (p.convex) 1f else 0f)
             GLES20.glUniform1f(u("uAlpha"), pane.alpha)
             val x0 = pane.x / sw * 2f - 1f
             val x1 = (pane.x + pane.w) / sw * 2f - 1f
@@ -676,7 +677,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             uniform vec2 uSize;
             uniform vec4 uShape;
             uniform vec4 uRadii;
-            uniform float uBevel, uRefract, uFalloff, uRefractDir, uDispersion, uSpec, uBandMax, uSat, uDim, uClear, uVeil, uAlpha;
+            uniform float uBevel, uRefract, uFalloff, uRefractDir, uDispersion, uSpec, uBandMax, uSat, uDim, uClear, uVeil, uConvex, uAlpha;
             uniform vec2 uLight;
 
             vec3 behind(vec2 s) {
@@ -699,6 +700,17 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             }
             float lensSDF(vec2 p) { return sdBox4(p - uShape.xy, uShape.zw, uRadii); }
 
+            // GlassGeometry.snellShift. Slope clamped at 64 so the outer pixel stays finite.
+            float snellShift(float t, float thick, float bev) {
+                float v = clamp(1.0 - clamp(t, 0.0, 1.0), 0.004, 1.0);
+                float base = max(1.0 - v * v * v * v, 0.0001);
+                float dhdu = (v * v * v) / pow(base, 0.75);
+                float slope = min(dhdu * (thick / max(bev, 1.0)), 64.0);
+                float th1 = atan(slope);
+                float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
+                return thick * tan(th1 - th2);
+            }
+
             void main() {
                 vec2 s = vec2(gl_FragCoord.x, uSurfH - gl_FragCoord.y);
                 vec2 p = s - uOrigin;
@@ -707,7 +719,8 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float cov = clamp(0.5 - d / 1.5, 0.0, 1.0) * uAlpha;
                 if (cov <= 0.004) { gl_FragColor = vec4(0.0); return; }
                 float bandW = clamp(uBevel * 0.3, 2.0, uBandMax);
-                bool interior = -d > max(uBevel, 3.0 + bandW) + 1.0;
+                float lip = uConvex > 0.5 ? uBevel * 0.55 : uBevel;
+                bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
                 if (interior && uClear > 0.5) {
                     float v = uVeil * cov;
                     gl_FragColor = vec4(vec3(0.5 * v), v);
@@ -719,12 +732,17 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 n = nl > 0.0001 ? n / nl : vec2(0.0, -1.0);
                 float t = clamp(-d / max(uBevel, 1.0), 0.0, 1.0);
                 float slope;
-                if (interior) slope = 0.0;
-                else if (uFalloff > 0.001) {
+                float shift;
+                if (interior) { slope = 0.0; shift = 0.0; }
+                else if (uConvex > 0.5) {
+                    shift = snellShift(t, uRefract, uBevel);
+                    slope = shift / max(uRefract, 1.0);
+                } else if (uFalloff > 0.001) {
                     float gB = pow(5.0, -uFalloff);
                     slope = (pow(1.0 + 4.0 * t, -uFalloff) - gB) / (1.0 - gB);
-                } else slope = (1.0 - t) * (1.0 - t);
-                vec2 off = n * (uRefractDir * slope * uRefract);
+                    shift = uRefractDir * slope * uRefract;
+                } else { slope = (1.0 - t) * (1.0 - t); shift = uRefractDir * slope * uRefract; }
+                vec2 off = n * shift;
                 vec3 col = vec3(behind(s + off * (1.0 - uDispersion * slope)).r,
                                 behind(s + off).g,
                                 behind(s + off * (1.0 + uDispersion * slope)).b);
@@ -737,6 +755,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     col = clamp(mix(vec3(lum), col, 1.0 + (uSat - 1.0) * mix(0.3, 1.0, room * hl)), 0.0, 1.0);
                 }
                 col *= 1.0 - uDim;
+                if (uConvex > 0.5) col *= 1.0 - 0.14 * smoothstep(0.12, 0.55, slope);
                 float facing = dot(n, -uLight);
                 float lobeF = pow(max(facing, 0.0), 4.5);
                 float lobeB = pow(max(-facing, 0.0), 4.5);
@@ -746,7 +765,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float spec = (hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF) * uSpec;
                 col = clamp(col + vec3(spec), 0.0, 1.0);
                 if (uClear > 0.5) {
-                    float a = 1.0 - smoothstep(0.35, 1.0, t);
+                    float a = uConvex > 0.5 ? smoothstep(0.03, 0.16, slope) : (1.0 - smoothstep(0.35, 1.0, t));
                     float v = uVeil * (1.0 - a);
                     vec3 rgb = clamp((col - vec3(spec)) * a + vec3(0.5 * v) + vec3(spec), 0.0, 1.0);
                     gl_FragColor = vec4(rgb * cov, clamp(a + v + spec, 0.0, 1.0) * cov);

@@ -82,6 +82,7 @@ internal class GlassLensRenderer {
             uniform float  touchAmp;
             uniform float  clearInterior; // 1: away from the rim the glass is transparent (what's behind shows itself)
             uniform float  clearVeil;     // opacity of a neutral mid-grey veil over the clear inside (0 = none)
+            uniform float  convex;        // 1: squircle lip, Snell's law, sample outward (GlassGeometry.snellShift)
 
             float sdRoundedBox(float2 p, float2 b, float r) {
                 float2 q = abs(p) - b + r;
@@ -101,6 +102,17 @@ internal class GlassLensRenderer {
             }
 
             // 斜面 / 法线 / 高光用透镜形状（平边已延伸出去，不产生边缘）
+            // GlassGeometry.snellShift. Slope clamped at 64 so the outer pixel stays finite.
+            float snellShift(float t, float thick, float bev) {
+                float v = clamp(1.0 - clamp(t, 0.0, 1.0), 0.004, 1.0);
+                float base = max(1.0 - v * v * v * v, 0.0001);
+                float dhdu = (v * v * v) / pow(base, 0.75);
+                float slope = min(dhdu * (thick / max(bev, 1.0)), 64.0);
+                float th1 = atan(slope);
+                float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
+                return thick * tan(th1 - th2);
+            }
+
             float lensSDF(float2 p) {
                 float d = sdRoundedBox4(p - shape1L.xy, shape1L.zw, radii1);
                 if (shape2.z > 0.5) {
@@ -132,7 +144,9 @@ internal class GlassLensRenderer {
                 // Interior fast path: away from the rim the bevel, the rim light and the glow are all
                 // zero, so one sample is the whole result (most of a panel's pixels; no normal, no pow).
                 float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
-                bool interior = (-d > max(bevel, 3.0 + bandW) + 1.0) && touchAmp <= 0.001;
+                // The convex lip only bends in its outer half; past that the sample is the pixel itself.
+                float lip = convex > 0.5 ? bevel * 0.55 : bevel;
+                bool interior = (-d > max(lip, 3.0 + bandW) + 1.0) && touchAmp <= 0.001;
                 // Clear interior: nothing to draw there, the real content behind shows through (a video on
                 // its own plane keeps its own brightness, colour processing and frame rate).
                 if (interior && clearInterior > 0.5) {
@@ -160,9 +174,17 @@ internal class GlassLensRenderer {
                 // 厚度剖面：t=1 平坦内部，t=0 边缘；slope 为斜面陡峭度（折射位移的比例）
                 float t = clamp(-d / max(bevel, 1.0), 0.0, 1.0);
                 float edge = 1.0 - t;
+                float refr = refractPx * (1.0 + 0.6 * press);
+                // shift: px along the outward normal. Convex lip is always outward; the older
+                // profile follows refractDir (negative = inward).
                 float slope;
+                float shift;
                 if (interior) {
                     slope = 0.0;
+                    shift = 0.0;
+                } else if (convex > 0.5) {
+                    shift = snellShift(t, refr, bevel);
+                    slope = shift / max(refr, 1.0);
                 } else if (falloff > 0.001) {
                     // 引力透镜式逆幂衰减：位移 ∝ (1 + x/k)^-p，核半径 k = 斜面宽度的 1/4，
                     // 减去带末端的值再归一化，贴边 = 1、带末端平滑落到 0。越贴边越剧烈：
@@ -170,19 +192,17 @@ internal class GlassLensRenderer {
                     // 内侧只留一段缓慢回落的轻微放大尾巴
                     float gB = pow(5.0, -falloff);
                     slope = (pow(1.0 + 4.0 * t, -falloff) - gB) / (1.0 - gB);
+                    shift = refractDir * slope * refr;
                 } else {
                     // 平方斜面：弯折沿整条斜面带均匀铺开
                     slope = edge * edge;
+                    shift = refractDir * slope * refr;
                 }
 
-                // 折射：refractDir = -1 沿法线向内采样（默认，与 iOS 一致）——边缘是内侧背景的
-                // 压缩镜像；+1 为可选的凸透镜模式，向外采样，形状外的背景被弯进边缘，
-                // 靠近的内容还没进到玻璃下面就先出现在边缘，进来之后沿边缘延展。
                 // RuntimeShader 子输入只保证"输出裁剪区"内可采样（Android 未暴露 Skia 的
                 // childSampleRadius），向外采样必须让输出区覆盖整个外扩录制区——见 draw()
                 // 里的外层合成节点；采样再由 sampleLo/Hi 钳在有内容的范围内
-                float refr = refractPx * (1.0 + 0.6 * press);
-                float2 offset = n * (refractDir * slope * refr);
+                float2 offset = n * shift;
 
                 // 触摸局部液态凸起（手指下方的局部放大：采样向触点收缩）
                 if (touchAmp > 0.001) {
@@ -258,6 +278,10 @@ internal class GlassLensRenderer {
                     col = mix(col, tintColor.rgb, tintColor.a);
                 }
                 col = col * (1.0 - dimAmount);
+                // The lip is a volume: a little darker where the glass is thickest, not across the inside.
+                if (convex > 0.5) {
+                    col *= 1.0 - 0.14 * smoothstep(0.12, 0.55, slope);
+                }
 
                 // 使用方指定的玻璃本体色：按"有色介质"建模——吸收（保留背景明暗
                 // 层次与折射细节）+ 少量散射（暗背景下也看得出色相）。
@@ -297,7 +321,9 @@ internal class GlassLensRenderer {
                 if (clearInterior > 0.5) {
                     // Only the rim is drawn: the refracted band fades out towards the inside, the rim light
                     // stays at full strength (premultiplied: specular adds light where the glass is clear).
-                    float a = 1.0 - smoothstep(0.35, 1.0, t);
+                    // Convex: opaque where the picture actually moves, so the bend reads as glass
+                    // and not as a ghost of the straight picture behind it. Legacy: fade across the band.
+                    float a = convex > 0.5 ? smoothstep(0.03, 0.16, slope) : (1.0 - smoothstep(0.35, 1.0, t));
                     // Where the rim fades out, the veil takes over (the same faint grey as the inside).
                     float v = clearVeil * (1.0 - a);
                     float3 rgb = clamp((col - float3(specV)) * a + float3(0.5 * v) + float3(specV), float3(0.0), float3(1.0));
@@ -344,7 +370,9 @@ internal class GlassLensRenderer {
         /** Draw the rim band only; the interior stays transparent. */
         val clearInterior: Boolean = false,
         /** With [clearInterior]: opacity of a neutral mid-grey veil over the transparent inside. */
-        val clearVeil: Float = 0f
+        val clearVeil: Float = 0f,
+        /** Convex squircle lip (Snell, sampled outward). [refract] is the lip thickness. */
+        val convex: Boolean = false
     )
 
     private val renderNode = RenderNode("LiquidGlassLens")
@@ -486,10 +514,19 @@ internal class GlassLensRenderer {
         lastRecMargin = margin; lastSig = sig; lastUnderlayV = underlayV; lastForceV = forceV; lastSource = parent
         lastX = x; lastY = y
 
+        // Outward samples (the convex lip) have to see past the view, and a RuntimeShader only
+        // reads inside its output. Drawing the lens into layerNode makes that output the whole
+        // recording, margin included. Quarter-scale recording stays on either way: the lip reads
+        // the upscaled picture.
+        val scale = params.backdropScale
+        val scaled = scale < 0.99f && scale > 0f
         if (params.outward) {
-            // 见 layerNode 的说明：带效果的节点画进外层合成节点，让着色器的输出区覆盖整个录制区
             renderNode.setPosition(0, 0, recW, recH)
-            recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
+            if (scaled) {
+                recordScaledBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH, scale, params.blurRadius)
+            } else {
+                recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
+            }
             layerNode.setPosition(x - margin, y - margin, x + width + margin, y + height + margin)
             val layerCanvas = layerNode.beginRecording(recW, recH)
             try {
@@ -499,15 +536,12 @@ internal class GlassLensRenderer {
             }
             canvas.drawRenderNode(layerNode)
         } else {
-            // 录制区域向四周外扩 margin：模糊在边缘处能采到真实内容而非透明黑
             renderNode.setPosition(x - margin, y - margin, x + width + margin, y + height + margin)
-            val scale = params.backdropScale
-            if (scale < 0.99f && scale > 0f) {
+            if (scaled) {
                 recordScaledBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH, scale, params.blurRadius)
             } else {
                 recordBackdrop(parent, glassView, surface, offsetX, offsetY, margin, recW, recH)
             }
-            // 形状覆盖率由着色器输出（形状外 alpha=0），无需 clipPath
             canvas.drawRenderNode(renderNode)
         }
         return true
@@ -712,9 +746,10 @@ internal class GlassLensRenderer {
         sh.setFloatUniform("touchAmp", p.touchAmp)
         sh.setFloatUniform("clearInterior", if (p.clearInterior) 1f else 0f)
         sh.setFloatUniform("clearVeil", p.clearVeil)
+        sh.setFloatUniform("convex", if (p.convex) 1f else 0f)
 
         val lens = RenderEffect.createRuntimeShaderEffect(sh, "content")
-        val scaled = p.backdropScale < 0.99f && p.backdropScale > 0f && !p.outward
+        val scaled = p.backdropScale < 0.99f && p.backdropScale > 0f
         return if (p.blurRadius > 0.01f && !scaled) {
             RenderEffect.createChainEffect(
                 lens,
