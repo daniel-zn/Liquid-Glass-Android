@@ -505,6 +505,7 @@ internal class GlassLensRenderer {
             return true
         }
         recorded = true
+        curSig = sig; curForce = forceV
         lastRecordedParams = params; lastOffX = offsetX; lastOffY = offsetY; lastRecW = width; lastRecH = height
         lastRecMargin = margin; lastSig = sig; lastUnderlayV = underlayV; lastForceV = forceV; lastSource = parent
         lastX = x; lastY = y
@@ -543,6 +544,28 @@ internal class GlassLensRenderer {
     }
 
     private var recorded = false
+    private var curSig = 0
+    private var curForce = 0
+
+    /**
+     * Draws the backdrop in source coordinates into [c] (already translated to the recording's origin, and
+     * scaled by [scale] when recording scaled): the panel's shared one if [glassView] is a control on a glass
+     * panel, else its own capture.
+     */
+    private fun drawBackdrop(c: android.graphics.Canvas, parent: View, glassView: View, host: GlassSurface, scale: Float) {
+        val anchor = if (Build.VERSION.SDK_INT >= 33) SharedBackdrop.anchorFor(glassView, parent) else null
+        if (anchor != null) {
+            val s = if (scale > 0f && scale < 0.99f) scale else 0.5f
+            val node = SharedBackdrop.get(parent, anchor, host.glassUnderlay, curForce, curSig, s)
+            val save = c.save()
+            c.scale(1f / s, 1f / s)
+            c.drawRenderNode(node)
+            c.restoreToCount(save)
+            return
+        }
+        GlassStats.lensRecords++
+        backdropCapture.draw(c, parent, glassView, host.glassUnderlay)
+    }
     private var lastRecordedParams: LensParams? = null
     private var lastOffX = Float.NaN
     private var lastOffY = Float.NaN
@@ -580,7 +603,6 @@ internal class GlassLensRenderer {
         recW: Int,
         recH: Int
     ) {
-        GlassStats.lensRecords++
         val recordingCanvas = renderNode.beginRecording(recW, recH)
         try {
             recordingCanvas.translate(margin - offsetX, margin - offsetY)
@@ -588,7 +610,7 @@ internal class GlassLensRenderer {
             // 硬件画布上父视图绘制子视图不走 View.draw，isCapturingBackdrop 拦不住
             // 自己；跳过自身、以及跨层级祖先的重入/成环处理都在 BackdropCapture 里
             try {
-                backdropCapture.draw(recordingCanvas, parent, glassView, host.glassUnderlay)
+                drawBackdrop(recordingCanvas, parent, glassView, host, 1f)
             } finally {
                 host.glassCapturing = false
             }
@@ -613,7 +635,6 @@ internal class GlassLensRenderer {
         scale: Float,
         blurRadius: Float
     ) {
-        GlassStats.lensRecords++
         val bw = ceil(recW * scale).toInt().coerceAtLeast(1)
         val bh = ceil(recH * scale).toInt().coerceAtLeast(1)
         blurNode.setPosition(0, 0, bw, bh)
@@ -630,7 +651,7 @@ internal class GlassLensRenderer {
             bc.translate(margin - offsetX, margin - offsetY)
             host.glassCapturing = true
             try {
-                backdropCapture.draw(bc, parent, glassView, host.glassUnderlay)
+                drawBackdrop(bc, parent, glassView, host, scale)
             } finally {
                 host.glassCapturing = false
             }
