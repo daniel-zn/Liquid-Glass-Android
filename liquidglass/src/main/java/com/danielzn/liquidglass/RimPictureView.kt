@@ -37,6 +37,16 @@ class RimPictureView(context: Context) : View(context) {
     var originX = 0f
     var originY = 0f
 
+    /**
+     * Draws only the panes' rectangles of the picture (plus [cropMargin] px), not the whole buffer: the
+     * overlay must then draw nothing outside its panes (dims stay in the window, refracted only).
+     */
+    var crop = false
+        set(v) { field = v; invalidate() }
+    var cropMargin = 6f
+    private val src = android.graphics.Rect()
+    private val dst = android.graphics.RectF()
+
     /** Statistics: pictures received, frames drawn. */
     @Volatile var pictures = 0; private set
     @Volatile var draws = 0; private set
@@ -87,7 +97,18 @@ class RimPictureView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         val b = bitmap ?: return
-        canvas.drawBitmap(b, originX, originY, null)
+        val o = overlay
+        if (crop && o != null) {
+            for (p in o.panes) {
+                if (p.alpha <= 0.001f) continue
+                src.set((p.x - cropMargin).toInt().coerceAtLeast(0), (p.y - cropMargin).toInt().coerceAtLeast(0),
+                    Math.ceil((p.x + p.w + cropMargin).toDouble()).toInt().coerceAtMost(b.width),
+                    Math.ceil((p.y + p.h + cropMargin).toDouble()).toInt().coerceAtMost(b.height))
+                if (src.isEmpty) continue
+                dst.set(src.left + originX, src.top + originY, src.right + originX, src.bottom + originY)
+                canvas.drawBitmap(b, src, dst, null)
+            }
+        } else canvas.drawBitmap(b, originX, originY, null)
         draws++
     }
 
