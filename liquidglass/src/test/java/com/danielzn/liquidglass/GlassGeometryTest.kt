@@ -82,9 +82,11 @@ class GlassGeometryTest {
         assertTrue(p.convex)
         assertTrue(p.outward)
         val edge = GlassGeometry.snellShift(0f, 48f, 64f)
-        val inner = GlassGeometry.snellShift(0.35f, 48f, 64f)
-        assertTrue(edge > 40f)
-        assertTrue(inner < edge / 3f)
+        val mid = GlassGeometry.snellShift(0.35f, 48f, 64f)
+        // The bend is still a large fraction of the edge a third of the way in.
+        assertTrue(edge > 24f)
+        assertTrue(mid > edge * 0.4f)
+        assertTrue(mid < edge)
         assertEquals(0f, GlassGeometry.snellShift(1f, 48f, 64f), 0.05f)
         assertEquals(0f, GlassGeometry.snellShift(0f, 0f, 64f), 0f)
     }

@@ -4,7 +4,6 @@ import kotlin.math.asin
 import kotlin.math.atan
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.tan
 
@@ -58,17 +57,15 @@ internal object GlassGeometry {
 
     /**
      * How far a convex lip samples along its outward normal, in px. [t] is 0 at the outer edge and
-     * 1 at the inner end of [bevel]; [thick] is the lip's thickness. Squircle height
-     * (1 − (1−t)⁴)^¼, then Snell's law at index 1.5. The slope is clamped so the outer pixel stays
-     * finite. The same formula is in the three lens shaders (GlassLensRenderer, LiveRim,
-     * GlassRimOverlay); keep them identical.
+     * 1 at the inner end of [bevel]; [thick] is the lip's thickness. The slope falls with the square
+     * of the distance from the inner end and is capped at 4, then Snell's law at index 1.5. A cap of
+     * 64 put the whole curve into the outer pixel, which reads as a line. The same formula is in the
+     * three lens shaders (GlassLensRenderer, LiveRim, GlassRimOverlay); keep them identical.
      */
     fun snellShift(t: Float, thick: Float, bevel: Float): Float {
         if (thick <= 0f || bevel <= 0f) return 0f
-        val v = (1f - t.coerceIn(0f, 1f)).coerceIn(0.004f, 1f)
-        val base = max(1f - v * v * v * v, 1e-4f)
-        val dhdu = (v * v * v) / base.pow(0.75f)
-        val slope = min(dhdu * (thick / max(bevel, 1f)), 64f)
+        val u = 1f - t.coerceIn(0f, 1f)
+        val slope = min(u * u * 4f * (thick / max(bevel, 1f)), 4f)
         val th1 = atan(slope)
         val th2 = asin((sin(th1) / 1.5f).coerceIn(-1f, 1f))
         return thick * tan(th1 - th2)

@@ -700,12 +700,10 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             }
             float lensSDF(vec2 p) { return sdBox4(p - uShape.xy, uShape.zw, uRadii); }
 
-            // GlassGeometry.snellShift. Slope clamped at 64 so the outer pixel stays finite.
+            // GlassGeometry.snellShift. Slope capped at 4 so the bend covers the lip.
             float snellShift(float t, float thick, float bev) {
-                float v = clamp(1.0 - clamp(t, 0.0, 1.0), 0.004, 1.0);
-                float base = max(1.0 - v * v * v * v, 0.0001);
-                float dhdu = (v * v * v) / pow(base, 0.75);
-                float slope = min(dhdu * (thick / max(bev, 1.0)), 64.0);
+                float u = 1.0 - clamp(t, 0.0, 1.0);
+                float slope = min(u * u * 4.0 * (thick / max(bev, 1.0)), 4.0);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);
@@ -719,7 +717,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float cov = clamp(0.5 - d / 1.5, 0.0, 1.0) * uAlpha;
                 if (cov <= 0.004) { gl_FragColor = vec4(0.0); return; }
                 float bandW = clamp(uBevel * 0.3, 2.0, uBandMax);
-                float lip = uConvex > 0.5 ? uBevel * 0.55 : uBevel;
+                float lip = uConvex > 0.5 ? uBevel * 0.82 : uBevel;
                 bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
                 if (interior && uClear > 0.5) {
                     float v = uVeil * cov;

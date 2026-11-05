@@ -102,12 +102,10 @@ internal class GlassLensRenderer {
             }
 
             // 斜面 / 法线 / 高光用透镜形状（平边已延伸出去，不产生边缘）
-            // GlassGeometry.snellShift. Slope clamped at 64 so the outer pixel stays finite.
+            // GlassGeometry.snellShift. Slope capped at 4 so the bend covers the lip.
             float snellShift(float t, float thick, float bev) {
-                float v = clamp(1.0 - clamp(t, 0.0, 1.0), 0.004, 1.0);
-                float base = max(1.0 - v * v * v * v, 0.0001);
-                float dhdu = (v * v * v) / pow(base, 0.75);
-                float slope = min(dhdu * (thick / max(bev, 1.0)), 64.0);
+                float u = 1.0 - clamp(t, 0.0, 1.0);
+                float slope = min(u * u * 4.0 * (thick / max(bev, 1.0)), 4.0);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);
@@ -144,8 +142,8 @@ internal class GlassLensRenderer {
                 // Interior fast path: away from the rim the bevel, the rim light and the glow are all
                 // zero, so one sample is the whole result (most of a panel's pixels; no normal, no pow).
                 float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
-                // The convex lip only bends in its outer half; past that the sample is the pixel itself.
-                float lip = convex > 0.5 ? bevel * 0.55 : bevel;
+                // Past the lip the bend is gone, so the sample is the pixel itself.
+                float lip = convex > 0.5 ? bevel * 0.82 : bevel;
                 bool interior = (-d > max(lip, 3.0 + bandW) + 1.0) && touchAmp <= 0.001;
                 // Clear interior: nothing to draw there, the real content behind shows through (a video on
                 // its own plane keeps its own brightness, colour processing and frame rate).
