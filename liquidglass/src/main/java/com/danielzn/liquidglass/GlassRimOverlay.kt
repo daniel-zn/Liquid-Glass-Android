@@ -236,9 +236,25 @@ class GlassRimOverlay(
         updateCrop()
     }
 
+    /**
+     * Draws into a surface it doesn't own: a window's own surface taken with Window.takeSurface (a
+     * [WindowCompositor]): no layer of its own, the window's UI is composited over it.
+     */
+    fun attachToSurface(s: Surface, w: Int, h: Int) {
+        detachSurface()
+        surfaceW = w
+        surfaceH = h
+        surface = s
+        changed()
+    }
+
     /** Removes the layer (its GL surface is dropped on the next render). */
     fun detachSurface() {
-        val sc = control ?: return
+        val sc = control
+        if (sc == null) {
+            if (surface != null) { surface = null; changed() }
+            return
+        }
         val s = surface
         surface = null
         control = null
@@ -413,6 +429,66 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
     private val copyVersions = HashMap<GlassRimOverlay, Int>()
     private val quad: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
     private val loc = HashMap<String, Int>()
+
+    private var uiProgram = 0
+    private val fullQuad: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
+        put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0)
+    }
+
+    /**
+     * A whole window frame (a [WindowCompositor]): the moved views (dims), every glass rim from the video
+     * picture ([haveVideo]), then the window's UI picture over all of it. Returns the GPU-side wall ms, or -1.
+     */
+    fun composite(o: GlassRimOverlay, videoTex: Int, videoMtx: FloatArray, haveVideo: Boolean, uiTex: Int, uiMtx: FloatArray, haveUi: Boolean): Float {
+        val s = o.surface ?: return -1f
+        var t = targets[o]
+        if (t != null && t.surface !== s) { EGL14.eglDestroySurface(display, t.egl); targets.remove(o); t = null }
+        if (!s.isValid) return -1f
+        if (t == null) {
+            val egl = EGL14.eglCreateWindowSurface(display, config, s, intArrayOf(EGL14.EGL_NONE), 0)
+            if (egl == null || egl == EGL14.EGL_NO_SURFACE) { Log.w(GlassRimOverlay.TAG, "no EGL window surface (${EGL14.eglGetError()})"); return -1f }
+            t = Target(s, egl); targets[o] = t
+        }
+        val t0 = SystemClock.elapsedRealtimeNanos()
+        EGL14.eglMakeCurrent(display, t.egl, t.egl, context)
+        if (program == 0) build()
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        GLES20.glViewport(0, 0, o.surfaceW, o.surfaceH)
+        GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
+        GLES20.glClearColor(0f, 0f, 0f, 0f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        drawSlots(o)
+        val panes = o.panes
+        if (haveVideo && panes.isNotEmpty()) drawPanes(o, panes, videoTex, videoMtx)
+        if (haveUi) {
+            if (uiProgram == 0) uiProgram = link("attribute vec2 aPos; uniform mat4 uM; varying vec2 vUv; void main() { gl_Position = vec4(aPos, 0.0, 1.0); vUv = (uM * vec4(aPos * 0.5 + 0.5, 0.0, 1.0)).xy; }",
+                "#extension GL_OES_EGL_image_external : require\nprecision mediump float; uniform samplerExternalOES uT; varying vec2 vUv; void main() { gl_FragColor = texture2D(uT, vUv); }")
+            GLES20.glUseProgram(uiProgram)
+            GLES20.glEnable(GLES20.GL_BLEND)
+            GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)   // the UI picture is premultiplied
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, uiTex)
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(uiProgram, "uT"), 0)
+            GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(uiProgram, "uM"), 1, false, uiMtx, 0)
+            val a = GLES20.glGetAttribLocation(uiProgram, "aPos")
+            fullQuad.position(0)
+            GLES20.glVertexAttribPointer(a, 2, GLES20.GL_FLOAT, false, 8, fullQuad)
+            GLES20.glEnableVertexAttribArray(a)
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            GLES20.glDisable(GLES20.GL_BLEND)
+        }
+        EGL14.eglSwapBuffers(display, t.egl)
+        val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1e6f
+        o.frames++
+        o.meanMs += (ms - o.meanMs) / o.frames
+        if (ms > o.worstMs) o.worstMs = ms
+        GlassStats.overlayFrames++
+        if (haveVideo && !o.firstFrameSeen) {
+            o.firstFrameSeen = true
+            o.onFirstFrame?.let { main.post(it) }
+        }
+        return ms
+    }
 
     /**
      * Draws [o] if needed: [newFrame] (a new video picture) or its panes changed. Returns false when
@@ -660,6 +736,8 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
         for (t in slotTex.values) GLES20.glDeleteTextures(1, intArrayOf(t), 0)
         slotTex.clear()
         if (slotProgram != 0) GLES20.glDeleteProgram(slotProgram)
+        if (uiProgram != 0) GLES20.glDeleteProgram(uiProgram)
+        uiProgram = 0
         slotProgram = 0
         program = 0
         copyTex = 0

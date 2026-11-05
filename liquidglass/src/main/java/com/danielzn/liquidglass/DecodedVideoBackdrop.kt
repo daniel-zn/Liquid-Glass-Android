@@ -112,6 +112,12 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
     @Volatile private var seekToMs = -1L
     @Volatile var durationMs = 0L; private set
 
+    /**
+     * Decode into this surface instead (a [WindowCompositor]'s video texture): no GL thread of our own, the
+     * compositor owns the texture and outlives clips and pauses.
+     */
+    @Volatile var externalOutput: Surface? = null
+
     /** Starts (or switches to) [proxy] at [positionMs] of the main clip. */
     fun open(proxy: File, positionMs: Long) {
         close()
@@ -121,6 +127,11 @@ class DecodedVideoBackdrop @JvmOverloads constructor(
         baseWallMs = SystemClock.uptimeMillis()
         seekToMs = positionMs
         playing = true
+        val ext = externalOutput
+        if (ext != null) {
+            decodeThread = Thread({ decodeLoop(proxy, ext) }, "glass-video-decode").also { it.start() }
+            return
+        }
         val t = HandlerThread("glass-video-gl").also { it.start() }
         glThread = t
         val h = Handler(t.looper)
