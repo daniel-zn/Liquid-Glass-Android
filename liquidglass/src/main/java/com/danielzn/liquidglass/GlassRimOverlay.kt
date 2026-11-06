@@ -797,7 +797,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     // what's behind, lifted toward white, instead of the clear hole.
                     float v = uVeil * cov;
                     float fa = uFrost * cov;
-                    vec3 fr = fa > 0.002 ? mix(behind(s), vec3(1.0), 0.16) : vec3(0.0);
+                    vec3 fr = fa > 0.002 ? min(mix(behind(s) * 1.12, vec3(1.0), 0.30), vec3(1.0)) : vec3(0.0);
                     gl_FragColor = vec4(fr * fa + vec3(0.96 * v) * (1.0 - fa), fa + v * (1.0 - fa));
                     return;
                 }
@@ -845,7 +845,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     float a = uConvex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
                     // Where the lip fades out, the inside shows: the same light lift, and the frost.
                     float fa = uFrost * (1.0 - a);
-                    vec3 fr = fa > 0.002 ? mix(behind(s), vec3(1.0), 0.16) : vec3(0.0);
+                    vec3 fr = fa > 0.002 ? min(mix(behind(s) * 1.12, vec3(1.0), 0.30), vec3(1.0)) : vec3(0.0);
                     float v = uVeil * (1.0 - a) * (1.0 - uFrost);
                     vec3 rgb = clamp((col - vec3(spec)) * a + fr * fa + vec3(0.96 * v) + vec3(spec), 0.0, 1.0);
                     gl_FragColor = vec4(rgb * cov, clamp(a + fa + v + spec, 0.0, 1.0) * cov);
