@@ -836,6 +836,9 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     col = clamp(mix(vec3(lum), col, 1.0 + (uSat - 1.0) * mix(0.3, 1.0, room * hl)), 0.0, 1.0);
                 }
                 col *= 1.0 - uDim;
+                // Frosted glass is frosted in the lip too (a small control is all lip): the bent picture,
+                // lifted the same way, so it never reads as a dark ring over a dark picture.
+                if (uFrost > 0.001) col = mix(col, frost(col), uFrost);
                 if (uConvex > 0.5) col = mix(col, vec3(1.0), 0.06 * smoothstep(0.12, 0.55, slope));
                 // uLight points at the light, so (0, -1) lights the top edge.
                 float facing = dot(n, uLight);
