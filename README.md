@@ -2,6 +2,9 @@
 > when nothing moves (TV launchers, kiosks, glass over video): see
 > [Lean glass for TV and video](#lean-glass-for-tv-and-video). Upstream:
 > [QWEA0/Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android) (MIT).
+> The overlay's convex lens profile is adapted from
+> [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0): see
+> `liquidglass/src/main/THIRD_PARTY_NOTICES.txt` and `LICENSE-APACHE-2.0.txt`.
 
 ![frontPhoto](assets/banner.png)
 <div align="center">

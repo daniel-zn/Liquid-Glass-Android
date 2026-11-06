@@ -818,7 +818,12 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float shift;
                 if (interior) { slope = 0.0; shift = 0.0; }
                 else if (uConvex > 0.5) {
-                    shift = snellShift(t, uRefract, uBevel);
+                    // Rounded lens edge (profile adapted from Kyant0/AndroidLiquidGlass, Apache-2.0, see
+                    // THIRD_PARTY_NOTICES.txt): a circular cross-section, the bend strongest at the edge and
+                    // easing to nothing at the lip's inner end, sampling inward by up to uRefract (it magnifies
+                    // what's under the rim, the tvOS 27 look).
+                    float x = 1.0 - t;
+                    shift = (1.0 - sqrt(max(1.0 - x * x, 0.0))) * uRefract;
                     slope = shift / max(uRefract, 1.0);
                 } else if (uFalloff > 0.001) {
                     float gB = pow(5.0, -uFalloff);
@@ -826,6 +831,13 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     shift = uRefractDir * slope * uRefract;
                 } else { slope = (1.0 - t) * (1.0 - t); shift = uRefractDir * slope * uRefract; }
                 vec2 off = n * shift;
+                if (uConvex > 0.5) {
+                    // Inward, tilted toward the centre (Kyant0's depth effect): the rim reads as rounded glass.
+                    vec2 radial = p - uShape.xy;
+                    float rl = length(radial);
+                    vec2 dir = normalize(n + 0.6 * (rl > 0.001 ? radial / rl : n));
+                    off = -dir * shift;
+                }
                 vec3 col = vec3(behind(s + off * (1.0 - uDispersion * slope)).r,
                                 behind(s + off).g,
                                 behind(s + off * (1.0 + uDispersion * slope)).b);
