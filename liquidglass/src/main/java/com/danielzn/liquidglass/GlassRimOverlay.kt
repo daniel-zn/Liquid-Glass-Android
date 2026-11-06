@@ -765,6 +765,12 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 return c;
             }
 
+            // Frosted glass: the soft picture behind, lifted toward white, more over dark pictures (glass
+            // always reads lighter than what's behind it: over a night sky too, never a dark well).
+            vec3 frost(vec3 b) {
+                float bl = dot(b, vec3(0.2126, 0.7152, 0.0722));
+                return min(mix(b * 1.12, vec3(1.0), 0.30 + 0.25 * (1.0 - bl)), vec3(1.0));
+            }
             float sdBox4(vec2 p, vec2 b, vec4 r) {
                 float rx = (p.x > 0.0) ? ((p.y > 0.0) ? r.z : r.y) : ((p.y > 0.0) ? r.w : r.x);
                 vec2 q = abs(p) - b + rx;
@@ -797,7 +803,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     // what's behind, lifted toward white, instead of the clear hole.
                     float v = uVeil * cov;
                     float fa = uFrost * cov;
-                    vec3 fr = fa > 0.002 ? min(mix(behind(s) * 1.12, vec3(1.0), 0.30), vec3(1.0)) : vec3(0.0);
+                    vec3 fr = fa > 0.002 ? frost(behind(s)) : vec3(0.0);
                     gl_FragColor = vec4(fr * fa + vec3(0.96 * v) * (1.0 - fa), fa + v * (1.0 - fa));
                     return;
                 }
@@ -845,7 +851,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     float a = uConvex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
                     // Where the lip fades out, the inside shows: the same light lift, and the frost.
                     float fa = uFrost * (1.0 - a);
-                    vec3 fr = fa > 0.002 ? min(mix(behind(s) * 1.12, vec3(1.0), 0.30), vec3(1.0)) : vec3(0.0);
+                    vec3 fr = fa > 0.002 ? frost(behind(s)) : vec3(0.0);
                     float v = uVeil * (1.0 - a) * (1.0 - uFrost);
                     vec3 rgb = clamp((col - vec3(spec)) * a + fr * fa + vec3(0.96 * v) + vec3(spec), 0.0, 1.0);
                     gl_FragColor = vec4(rgb * cov, clamp(a + fa + v + spec, 0.0, 1.0) * cov);
