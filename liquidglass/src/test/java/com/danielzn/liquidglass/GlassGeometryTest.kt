@@ -28,6 +28,15 @@ class GlassGeometryTest {
     }
 
     @Test
+    fun convexLipReachesFurtherOnLongShapesThanOnRoundOnes() {
+        val look = GlassLook(bevel = 120f, refraction = 80f, convex = true)
+        val pill = GlassGeometry.lensParams(look, 400f, 90f, 45f, density)
+        val round = GlassGeometry.lensParams(look, 90f, 90f, 45f, density)
+        assertEquals(90f * 0.46f, pill.bevel, 0.01f)
+        assertEquals(90f * 0.34f, round.bevel, 0.01f)
+    }
+
+    @Test
     fun smallControlGetsAProportionallySmallerBend() {
         val look = GlassLook(bevel = 30f, refraction = 50f)
         // 48 px short side at density 2 (24 dp, under the 110 dp reference)
@@ -74,7 +83,7 @@ class GlassGeometryTest {
     }
 
     @Test
-    fun convexLipIsANarrowBezel() {
+    fun convexLipBendsWellInAndIsGoneAtTheInnerEnd() {
         val look = GlassLook(bevel = 64f, refraction = 48f, convex = true)
         val p = GlassGeometry.lensParams(look, 400f, 400f, 40f, density)
         assertEquals(64f, p.bevel, 0.01f)
@@ -84,26 +93,28 @@ class GlassGeometryTest {
         val edge = GlassGeometry.snellShift(0f, 48f, 64f)
         val mid = GlassGeometry.snellShift(0.35f, 48f, 64f)
         val inner = GlassGeometry.snellShift(0.55f, 48f, 64f)
-        // A visible bend at the outer edge, not a hairline and not a second copy of a glyph.
+        // A visible bend at the outer edge that still reaches well in (a wide band, tvOS 27), easing
+        // off smoothly: nothing left at the inner end of the bevel.
         assertTrue(edge > 10f)
         assertTrue(edge < 22f)
-        assertTrue(mid < edge * 0.25f)
-        assertTrue(inner < 1.5f)
+        assertTrue(mid > edge * 0.25f)
+        assertTrue(mid < edge * 0.55f)
+        assertTrue(inner < edge * 0.2f)
         assertEquals(0f, GlassGeometry.snellShift(1f, 48f, 64f), 0.05f)
         assertEquals(0f, GlassGeometry.snellShift(0f, 0f, 64f), 0f)
     }
 
     @Test
     fun aPanelSizedLipBendsAndThenMeetsTheHole() {
-        // The thickness a panel actually uses: an edge you can see, gone before the clear inside,
-        // so the lip cannot draw a second copy of a glyph.
+        // The thickness a panel actually uses: an edge you can see, still bending at mid-depth, fading
+        // into the clear inside.
         val edge = GlassGeometry.snellShift(0f, 24f, 40f)
         val mid = GlassGeometry.snellShift(0.3f, 24f, 40f)
         val inner = GlassGeometry.snellShift(0.5f, 24f, 40f)
         assertTrue(edge > 6f)
         assertTrue(edge < 11f)
-        assertTrue(mid < 2f)
-        assertTrue(inner < 0.5f)
+        assertTrue(mid < edge * 0.5f)
+        assertTrue(inner < edge * 0.2f)
     }
 
     @Test

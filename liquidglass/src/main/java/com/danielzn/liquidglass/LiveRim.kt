@@ -244,11 +244,11 @@ class LiveRim(val name: String) : BackdropUnderlay, GlassAttachable {
                 float2 q = abs(p) - b + rx;
                 return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - rx;
             }
-            // GlassGeometry.snellShift. Fifth-power bezel, slope capped at 1.15.
+            // GlassGeometry.snellShift. Cubic bezel (the bend reaches well in), slope capped at 1.15.
             float snellShift(float t, float thick, float bev) {
                 float u = 1.0 - clamp(t, 0.0, 1.0);
                 float u2 = u * u;
-                float slope = min(u2 * u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
+                float slope = min(u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);

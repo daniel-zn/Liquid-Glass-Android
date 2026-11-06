@@ -23,7 +23,10 @@ internal object GlassGeometry {
         val shortSide = max(min(w, h), 1f)
         val refPx = REF_DP * density
         // A convex bezel needs room, but not half the control: top and bottom rims stay apart.
-        val bevelCap = if (look.convex) 0.34f else 0.3f
+        // A convex lip reaches far in on long shapes (pills, shelves, panels: tvOS's wide bending band) but
+        // stops a third of the way on round and square controls, so the middle stays calm behind the icon.
+        val elongated = max(w, h) > 2f * min(w, h)
+        val bevelCap = if (look.convex) (if (elongated) 0.46f else 0.34f) else 0.3f
         val bevel = min(look.bevel, shortSide * bevelCap).coerceAtLeast(2f)
         val refract = max(0f, min(look.refraction, 0.7f * shortSide * min(1f, shortSide / refPx)))
         return GlassLensRenderer.LensParams(
@@ -59,7 +62,7 @@ internal object GlassGeometry {
 
     /**
      * How far a convex lip samples along its outward normal, in px. [t] is 0 at the outer edge and
-     * 1 at the inner end of [bevel]; [thick] is the lip's thickness. The slope rises with the fifth
+     * 1 at the inner end of [bevel]; [thick] is the lip's thickness. The slope rises with the cube
      * power of the distance from the inner end and is capped at 1.15, then Snell's law at index 1.5,
      * so the bend is a bezel: strong at the outer edge, gone well before the clear inside. A cap of
      * 4 across the whole bevel translated a strip of the picture (a second copy of whatever sat
@@ -70,7 +73,7 @@ internal object GlassGeometry {
         if (thick <= 0f || bevel <= 0f) return 0f
         val u = 1f - t.coerceIn(0f, 1f)
         val u2 = u * u
-        val slope = min(u2 * u2 * u * 2f * (thick / max(bevel, 1f)), 1.15f)
+        val slope = min(u2 * u * 2f * (thick / max(bevel, 1f)), 1.15f)
         val th1 = atan(slope)
         val th2 = asin((sin(th1) / 1.5f).coerceIn(-1f, 1f))
         return thick * tan(th1 - th2)

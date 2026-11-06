@@ -102,11 +102,11 @@ internal class GlassLensRenderer {
             }
 
             // 斜面 / 法线 / 高光用透镜形状（平边已延伸出去，不产生边缘）
-            // GlassGeometry.snellShift. Fifth-power bezel, slope capped at 1.15.
+            // GlassGeometry.snellShift. Cubic bezel (the bend reaches well in), slope capped at 1.15.
             float snellShift(float t, float thick, float bev) {
                 float u = 1.0 - clamp(t, 0.0, 1.0);
                 float u2 = u * u;
-                float slope = min(u2 * u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
+                float slope = min(u2 * u * 2.0 * (thick / max(bev, 1.0)), 1.15);
                 float th1 = atan(slope);
                 float th2 = asin(clamp(sin(th1) / 1.5, -1.0, 1.0));
                 return thick * tan(th1 - th2);
