@@ -769,7 +769,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             // always reads lighter than what's behind it: over a night sky too, never a dark well).
             vec3 frost(vec3 b) {
                 float bl = dot(b, vec3(0.2126, 0.7152, 0.0722));
-                return min(mix(b * 1.12, vec3(1.0), 0.30 + 0.25 * (1.0 - bl)), vec3(1.0));
+                return min(mix(b * 1.06, vec3(1.0), 0.14 + 0.16 * (1.0 - bl)), vec3(1.0));
             }
             float sdBox4(vec2 p, vec2 b, vec4 r) {
                 float rx = (p.x > 0.0) ? ((p.y > 0.0) ? r.z : r.y) : ((p.y > 0.0) ? r.w : r.x);
@@ -796,15 +796,17 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float cov = clamp(0.5 - d / 1.5, 0.0, 1.0) * uAlpha;
                 if (cov <= 0.004) { gl_FragColor = vec4(0.0); return; }
                 float bandW = clamp(uBevel * 0.3, 2.0, uBandMax);
-                float lip = uConvex > 0.5 ? uBevel * 0.55 : uBevel;
-                bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
+                // One piece of glass: t is the depth into the lip (0 at the outer edge, 1 at the bevel's
+                // depth) and everything (the bend, the refracted copy's opacity, frost, tint) follows it
+                // continuously, so no step or ring shows where the lip meets the inside. Past the bevel and
+                // the rim light, the same formula with the lip's weight at 0 (a shortcut, not a seam).
+                bool interior = -d > max(uBevel, 3.0 + bandW) + 1.0;
                 if (interior && uClear > 0.5) {
-                    // A light lift (never a grey that darkens what's bright); frosted: the soft picture of
-                    // what's behind, lifted toward white, instead of the clear hole.
-                    float v = uVeil * cov;
-                    float fa = uFrost * cov;
+                    float v = uVeil;
+                    float fa = uFrost;
                     vec3 fr = fa > 0.002 ? frost(behind(s)) : vec3(0.0);
-                    gl_FragColor = vec4(fr * fa + vec3(0.96 * v) * (1.0 - fa), fa + v * (1.0 - fa));
+                    vec3 rgb = fr * fa + vec3(0.96 * v) * (1.0 - fa);
+                    gl_FragColor = vec4(rgb * cov, (fa + v * (1.0 - fa)) * cov);
                     return;
                 }
                 vec2 n = vec2(lensSDF(p + vec2(1.0, 0.0)) - lensSDF(p - vec2(1.0, 0.0)),
@@ -851,13 +853,18 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float spec = (hair * (0.95 * lobeF + 0.6 * lobeB + 0.18) + glow * (0.32 * lobeF + 0.18 * lobeB)) * reflect * uSpec;
                 col = clamp(col + vec3(spec), 0.0, 1.0);
                 if (uClear > 0.5) {
-                    float a = uConvex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
-                    // Where the lip fades out, the inside shows: the same light lift, and the frost.
-                    float fa = uFrost * (1.0 - a);
+                    // The lip's refracted picture fades into the real picture over the whole depth of the
+                    // lip with a smootherstep (no thin ring where the copy ends), and gets the same tint as
+                    // the inside, so the two are one surface.
+                    float a = 1.0 - t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+                    float v = uVeil;
+                    float fa = uFrost;
+                    vec3 lipC = mix(col - vec3(spec), vec3(0.96), v);
                     vec3 fr = fa > 0.002 ? frost(behind(s)) : vec3(0.0);
-                    float v = uVeil * (1.0 - a) * (1.0 - uFrost);
-                    vec3 rgb = clamp((col - vec3(spec)) * a + fr * fa + vec3(0.96 * v) + vec3(spec), 0.0, 1.0);
-                    gl_FragColor = vec4(rgb * cov, clamp(a + fa + v + spec, 0.0, 1.0) * cov);
+                    vec3 inC = fr * fa + vec3(0.96 * v) * (1.0 - fa);
+                    float inA = fa + v * (1.0 - fa);
+                    vec3 rgb = clamp(lipC * a + inC * (1.0 - a) + vec3(spec), 0.0, 1.0);
+                    gl_FragColor = vec4(rgb * cov, clamp(a + inA * (1.0 - a) + spec, 0.0, 1.0) * cov);
                 } else {
                     gl_FragColor = vec4(col * cov, cov);
                 }
