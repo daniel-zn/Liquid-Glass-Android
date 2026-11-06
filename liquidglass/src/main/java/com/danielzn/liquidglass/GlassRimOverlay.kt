@@ -650,6 +650,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             GLES20.glUniform1f(u("uClear"), if (p.clearInterior) 1f else 0f)
             GLES20.glUniform1f(u("uVeil"), p.clearVeil)
             GLES20.glUniform1f(u("uConvex"), if (p.convex) 1f else 0f)
+            GLES20.glUniform1f(u("uFrost"), p.frost)
             GLES20.glUniform1f(u("uAlpha"), pane.alpha)
             val x0 = pane.x / sw * 2f - 1f
             val x1 = (pane.x + pane.w) / sw * 2f - 1f
@@ -748,7 +749,7 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
             uniform vec2 uSize;
             uniform vec4 uShape;
             uniform vec4 uRadii;
-            uniform float uBevel, uRefract, uFalloff, uRefractDir, uDispersion, uSpec, uBandMax, uSat, uDim, uClear, uVeil, uConvex, uAlpha;
+            uniform float uBevel, uRefract, uFalloff, uRefractDir, uDispersion, uSpec, uBandMax, uSat, uDim, uClear, uVeil, uConvex, uAlpha, uFrost;
             uniform vec2 uLight;
 
             vec3 behind(vec2 s) {
@@ -792,8 +793,12 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                 float lip = uConvex > 0.5 ? uBevel * 0.55 : uBevel;
                 bool interior = -d > max(lip, 3.0 + bandW) + 1.0;
                 if (interior && uClear > 0.5) {
+                    // A light lift (never a grey that darkens what's bright); frosted: the soft picture of
+                    // what's behind, lifted toward white, instead of the clear hole.
                     float v = uVeil * cov;
-                    gl_FragColor = vec4(vec3(0.5 * v), v);
+                    float fa = uFrost * cov;
+                    vec3 fr = fa > 0.002 ? mix(behind(s), vec3(1.0), 0.16) : vec3(0.0);
+                    gl_FragColor = vec4(fr * fa + vec3(0.96 * v) * (1.0 - fa), fa + v * (1.0 - fa));
                     return;
                 }
                 vec2 n = vec2(lensSDF(p + vec2(1.0, 0.0)) - lensSDF(p - vec2(1.0, 0.0)),
@@ -825,22 +830,25 @@ internal class GlassRimRenderer(private val display: EGLDisplay, private val con
                     col = clamp(mix(vec3(lum), col, 1.0 + (uSat - 1.0) * mix(0.3, 1.0, room * hl)), 0.0, 1.0);
                 }
                 col *= 1.0 - uDim;
-                if (uConvex > 0.5) col *= 1.0 - 0.14 * smoothstep(0.12, 0.55, slope);
+                if (uConvex > 0.5) col = mix(col, vec3(1.0), 0.06 * smoothstep(0.12, 0.55, slope));
                 // uLight points at the light, so (0, -1) lights the top edge.
                 float facing = dot(n, uLight);
-                float lobeF = pow(max(facing, 0.0), 4.5);
-                float lobeB = pow(max(-facing, 0.0), 4.5);
+                float lobeF = pow(max(facing, 0.0), 2.2);
+                float lobeB = pow(max(-facing, 0.0), 2.2);
                 float glowIn = clamp((-d - 1.0) / 2.0, 0.0, 1.0);
                 float glow = glowIn * pow(clamp(1.0 - (-d - 2.0) / bandW, 0.0, 1.0), 1.5) * cov;
                 float hair = clamp(1.0 - abs(d + 1.0) / 1.15, 0.0, 1.0) * cov;
                 float reflect = 0.65 + 0.55 * lum;
-                float spec = (hair * (0.42 * lobeF + 0.16 * lobeB) + glow * 0.08 * lobeF) * reflect * uSpec;
+                float spec = (hair * (0.95 * lobeF + 0.6 * lobeB + 0.18) + glow * (0.32 * lobeF + 0.18 * lobeB)) * reflect * uSpec;
                 col = clamp(col + vec3(spec), 0.0, 1.0);
                 if (uClear > 0.5) {
                     float a = uConvex > 0.5 ? smoothstep(0.4, 1.8, shift) : (1.0 - smoothstep(0.35, 1.0, t));
-                    float v = uVeil * (1.0 - a);
-                    vec3 rgb = clamp((col - vec3(spec)) * a + vec3(0.5 * v) + vec3(spec), 0.0, 1.0);
-                    gl_FragColor = vec4(rgb * cov, clamp(a + v + spec, 0.0, 1.0) * cov);
+                    // Where the lip fades out, the inside shows: the same light lift, and the frost.
+                    float fa = uFrost * (1.0 - a);
+                    vec3 fr = fa > 0.002 ? mix(behind(s), vec3(1.0), 0.16) : vec3(0.0);
+                    float v = uVeil * (1.0 - a) * (1.0 - uFrost);
+                    vec3 rgb = clamp((col - vec3(spec)) * a + fr * fa + vec3(0.96 * v) + vec3(spec), 0.0, 1.0);
+                    gl_FragColor = vec4(rgb * cov, clamp(a + fa + v + spec, 0.0, 1.0) * cov);
                 } else {
                     gl_FragColor = vec4(col * cov, cov);
                 }

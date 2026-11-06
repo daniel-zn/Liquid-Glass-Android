@@ -48,8 +48,8 @@ class GlassLook @JvmOverloads constructor(
      */
     @JvmField var clearInterior: Boolean = false,
     /**
-     * With [clearInterior]: a faint neutral grey over the transparent inside (its opacity, 0-0.5; e.g.
-     * 0.07): what's behind is lifted and compressed a little toward mid-grey, no colour, no blur.
+     * With [clearInterior]: a faint light lift over the transparent inside (its opacity, 0-0.5; e.g.
+     * 0.07): what's behind is lifted a little toward white, never darkened, no colour, no blur.
      */
     @JvmField var clearVeil: Float = 0f,
     /**
@@ -59,11 +59,17 @@ class GlassLook @JvmOverloads constructor(
      * is how far inward it extends. Off: the older inverse-power profile, which samples inward and
      * packs the whole bend into a thin ring.
      */
-    @JvmField var convex: Boolean = false
+    @JvmField var convex: Boolean = false,
+    /**
+     * With [clearInterior], on the live overlay path: 0 = the inside is clear (the real picture under a
+     * hole); up to 1 = frosted, the inside shows the soft backdrop picture lifted toward white (the
+     * frosted-light look of tvOS controls).
+     */
+    @JvmField var frost: Float = 0f
 ) {
     fun copy(): GlassLook = GlassLook(
         blurRadius, bevel, refraction, falloff, dispersion, specular, saturation, tint, dim,
-        glassTint, lightX, lightY, backdropScale, clearInterior, clearVeil, convex
+        glassTint, lightX, lightY, backdropScale, clearInterior, clearVeil, convex, frost
     )
 
     fun set(o: GlassLook) {
@@ -71,6 +77,6 @@ class GlassLook @JvmOverloads constructor(
         dispersion = o.dispersion; specular = o.specular; saturation = o.saturation; tint = o.tint
         dim = o.dim; glassTint = o.glassTint; lightX = o.lightX; lightY = o.lightY
         backdropScale = o.backdropScale; clearInterior = o.clearInterior; clearVeil = o.clearVeil
-        convex = o.convex
+        convex = o.convex; frost = o.frost
     }
 }

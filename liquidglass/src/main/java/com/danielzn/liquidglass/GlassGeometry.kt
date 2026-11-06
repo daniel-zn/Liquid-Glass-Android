@@ -52,7 +52,8 @@ internal object GlassGeometry {
             backdropScale = look.backdropScale.coerceIn(0.1f, 1f),
             clearInterior = look.clearInterior,
             clearVeil = look.clearVeil.coerceIn(0f, 0.5f),
-            convex = look.convex
+            convex = look.convex,
+            frost = look.frost.coerceIn(0f, 1f)
         )
     }
 

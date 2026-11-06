@@ -364,10 +364,12 @@ internal class GlassLensRenderer {
         val backdropScale: Float = 1f,
         /** Draw the rim band only; the interior stays transparent. */
         val clearInterior: Boolean = false,
-        /** With [clearInterior]: opacity of a neutral mid-grey veil over the transparent inside. */
+        /** With [clearInterior]: opacity of a light lift over the transparent inside. */
         val clearVeil: Float = 0f,
         /** Convex squircle lip (Snell, sampled outward). [refract] is the lip thickness. */
-        val convex: Boolean = false
+        val convex: Boolean = false,
+        /** With [clearInterior] (live overlay): 0 clear inside, up to 1 frosted (GlassLook.frost). */
+        val frost: Float = 0f
     )
 
     private val renderNode = RenderNode("LiquidGlassLens")
